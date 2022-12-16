@@ -1,4 +1,4 @@
-# Chat em Tempo Real (Smackchat)
+# Chat Realtime (Smackchat)
 Desenvolvendo uma aplicação de bate-papo em tempo real utilizando Quasar Framework, Vue.js, Vuex e Firebase para web e que pode ser compilado para desktop e mobile.
 - Link para a Aplicação: https://smackchat-realtime.netlify.app/?#/
 - Caminho do executável (instalador) da aplicação desktop: dist\electron\Packaged
