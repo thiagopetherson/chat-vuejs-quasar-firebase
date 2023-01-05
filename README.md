@@ -9,9 +9,6 @@ Desenvolvendo uma aplicação de bate-papo em tempo real utilizando Quasar Frame
 
 ![image](https://user-images.githubusercontent.com/44420212/147836489-b16b2472-881b-4a62-9ebf-375197b8c8be.png)
 
-Chat foi feito com base no curso do canal Make Apps with Danny
-Link: https://www.youtube.com/channel/UC6eR_ndNgaTeE5t2Ud4ZiHw
-
 -----------------------------------------------
 
 A Quasar Framework app
