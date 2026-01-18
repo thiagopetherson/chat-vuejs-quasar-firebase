@@ -1,34 +1,46 @@
 <template>
   <q-page ref="pageChat" class="page-chat flex column">
 
-    <q-banner 
+    <q-banner
   		v-if="!otherUserDetails.online"
   		class="bg-yellow-4 text-center fixed-top">
       {{ otherUserDetails.name }} está offline.
-    </q-banner> 
+    </q-banner>
 
-    <q-banner 
+    <q-banner
   	  v-else
   		class="bg-green-2 text-center">
       {{ otherUserDetails.name }} está online.
     </q-banner>
 
     <div :class="{ 'invisible' : !showMessages }" class="q-pa-md column col justify-end">
-      <q-chat-message :bg-color="message.from == 'me' ? 'grey-3' : '#81c784'" v-for="message in messages" :key="message.messageId"
-      :name="message.from == 'me' ? userDetails.name : otherUserDetails.name" :text="[message.text]" 
-      :sent="message.from == 'me' ? true : false" 
-      />    
+      <q-chat-message
+        v-for="message in messages"
+        :key="message.messageId"
+        :bg-color="message.from == 'me' ? 'grey-3' : '#81c784'"
+        :text="[message.text]"
+        :sent="message.from == 'me'"
+        :name="formatName(message)"
+      />
     </div>
 
     <q-footer elevated>
       <q-toolbar>
         <q-form class="full-width">
-          <q-input bg-color="white" outlined rounded v-model="newMessage" @blur="scrollToBottom" ref="newMessage" label="Mensagem" dense>
+          <q-input
+            bg-color="white"
+            outlined
+            rounded
+            v-model="newMessage"
+            @blur="scrollToBottom"
+            ref="newMessage"
+            label="Mensagem"
+            dense>
             <template v-slot:after>
               <q-btn round dense flat icon="send" color="white" @click="sendMessage" />
             </template>
           </q-input>
-        </q-form>       
+        </q-form>
       </q-toolbar>
     </q-footer>
 
@@ -49,18 +61,73 @@
       }
     },
     computed: {
-      ...mapState('store', ['messages', 'userDetails'])     
+      ...mapState('store', ['messages', 'userDetails'])
     },
     methods: {
       ...mapActions('store', ['firebaseGetMessages','firebaseStopGettingMessages','firebaseSendMessage']),
-      sendMessage () {      
+      formatName(message) {
+        const nome = message.from === 'me'
+          ? this.userDetails.name
+          : this.otherUserDetails.name
+
+        if (!message.timestamp) return nome
+
+        return `${nome} - ${this.formatMessageDate(message.timestamp)}`
+      },
+      formatMessageDate(timestamp) {
+        if (!timestamp) return ''
+
+        timestamp = timestamp.replace(',', '')
+        const parts = timestamp.trim().split(/\s+/)
+        const [day, month, year] = parts[0].split('/').map(Number)
+        const [hour, minute, second] = parts[1].split(':').map(Number)
+
+        // Data/hora completa da mensagem
+        const messageDate = new Date(year, month - 1, day, hour, minute, second)
+
+        // Normalizando para meia-noite no fuso do Brasil
+        const msgMidnight = new Date(year, month - 1, day)
+        msgMidnight.setHours(0, 0, 0, 0)
+
+        const now = new Date()
+        const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        todayMidnight.setHours(0,0,0,0)
+
+        const yesterdayMidnight = new Date(todayMidnight)
+        yesterdayMidnight.setDate(todayMidnight.getDate() - 1)
+
+        const timeStr = `${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}:${String(second).padStart(2,'0')}`
+
+        if (msgMidnight.getTime() === todayMidnight.getTime()) {
+          return `Hoje, ${timeStr}`
+        }
+
+        if (msgMidnight.getTime() === yesterdayMidnight.getTime()) {
+          return `Ontem, ${timeStr}`
+        }
+
+        return `${parts[0]}, ${timeStr}`
+      },
+      sendMessage () {
+        if (!this.newMessage.trim()) {
+          return
+        }
+
+        // Gera a data no fuso do Brasil (dd/mm/aaaa hh:mm:ss)
+        const now = new Date()
+        const dateBr = now.toLocaleString('pt-BR', {
+          timeZone: 'America/Sao_Paulo'
+        })
+
         this.firebaseSendMessage({
           message: {
-            text: this.newMessage,
-            from: 'me'
+            text: this.newMessage.trim(),
+            from: 'me',
+            timestamp: dateBr
           },
           otherUserId: this.$route.params.otherUserId
         })
+
         this.clearMessage()
       },
       clearMessage () {
@@ -71,11 +138,11 @@
         let pageChat = this.$refs.pageChat.$el
         setTimeout(() => {
           window.scrollTo(0, pageChat.scrollHeight)
-        }, 20);          
+        }, 20);
       }
     },
     watch: {
-      // Esse observador verá quando tem uma nova mensagem. Então, quando tiver, será 
+      // Esse observador verá quando tem uma nova mensagem. Então, quando tiver, será
       /*
 	  	messages: function(val) {
         console.log(Object.keys(val))
@@ -89,7 +156,7 @@
       */
       // Essa parte abaixo foi feita pra consertar um erro (seguindo dica de um usuário na aula 14)
       messages: { handler(val) {
-        console.log(Object.keys(val))
+        // console.log(Object.keys(val))
 	  		if (Object.keys(val).length) {
 	  			this.scrollToBottom()
 	  			setTimeout(() => {
@@ -98,14 +165,14 @@
 	  		}
       }, deep: true }
 	  },
-    mounted () {     
-      
+    mounted () {
+
       // Limpando a caixa de mensagem, para as conversas de janelas fechadas não serem exibidas na nova janela
 	  	this.firebaseStopGettingMessages()
       //console.log(this.$route.params.otherUserId)
       this.firebaseGetMessages(this.$route.params.otherUserId)
       //console.log(this.messages)
-    },  
+    },
 	  destroyed() {
       // Limpando a caixa de mensagem, para as conversas de janelas fechadas não serem exibidas na nova janela
 	  	this.firebaseStopGettingMessages()
@@ -134,6 +201,6 @@
 		z-index 2
 		opacity 0.8
 	.q-message
-		z-index 1 
+		z-index 1
 
 </style>
