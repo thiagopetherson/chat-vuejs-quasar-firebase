@@ -96,7 +96,8 @@
         const yesterdayMidnight = new Date(todayMidnight)
         yesterdayMidnight.setDate(todayMidnight.getDate() - 1)
 
-        const timeStr = `${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}:${String(second).padStart(2,'0')}`
+        // const timeStr = `${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}:${String(second).padStart(2,'0')}`
+        const timeStr = `${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`
 
         if (msgMidnight.getTime() === todayMidnight.getTime()) {
           return `Hoje, ${timeStr}`

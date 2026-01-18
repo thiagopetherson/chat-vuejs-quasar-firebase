@@ -7,10 +7,10 @@ redirects = []
 [functions."*"]
 
 [build]
-publish = "/home/thiago/Desktop/Projects/chat-vuejs-quasar-firebase/dist/spa/dist/spa"
+publish = "/home/thiago/Desktop/Projects/chat-vuejs-quasar-firebase/dist/spa"
 publishOrigin = "ui"
 commandOrigin = "ui"
-base = "/home/thiago/Desktop/Projects/chat-vuejs-quasar-firebase/dist/spa"
+base = "/home/thiago/Desktop/Projects/chat-vuejs-quasar-firebase"
 command = "quasar build"
 
 [build.environment]
