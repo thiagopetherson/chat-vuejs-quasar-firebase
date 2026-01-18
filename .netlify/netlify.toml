@@ -1,0 +1,28 @@
+plugins = []
+headers = []
+redirects = []
+
+[functions]
+
+[functions."*"]
+
+[build]
+publish = "/home/thiago/Desktop/Projects/chat-vuejs-quasar-firebase/dist/spa/dist/spa"
+publishOrigin = "ui"
+commandOrigin = "ui"
+base = "/home/thiago/Desktop/Projects/chat-vuejs-quasar-firebase/dist/spa"
+command = "quasar build"
+
+[build.environment]
+
+[build.processing]
+
+[build.processing.css]
+
+[build.processing.html]
+
+[build.processing.images]
+
+[build.processing.js]
+
+[build.services]
