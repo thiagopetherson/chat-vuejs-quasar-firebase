@@ -3,6 +3,7 @@ import Vue from 'vue'
 import firebase from 'boot/firebase'
 
 let messagesRef
+let messagesListenerRef
 
 const state = {
     userDetails: {},
@@ -25,31 +26,34 @@ const mutations = {
             userId: payload.userId,
             ...payload.userDetails
         })
-        // console.log(payload)        
+        // console.log(payload)
 	},
-	updateUser(state, payload) {       
+	updateUser(state, payload) {
 
         // Atualizando a lista de usuários (do estado) caso haja alguma mudança no banco de dados do firebase
 
-        state.users.forEach((item, key) => {            
-           
-			if (item.userId === payload.userId) { 
-                state.users[key].userId = payload.userId             
+        state.users.forEach((item, key) => {
+
+			if (item.userId === payload.userId) {
+                state.users[key].userId = payload.userId
 				state.users[key].name = payload.userDetails.name
                 state.users[key].email = payload.userDetails.email
                 state.users[key].online = payload.userDetails.online
-			}        
-             
-		})       
-          
+			}
+
+		})
+
 		// Object.assign(state.users[payload.userId], payload.userDetails)
 	},
     addMessage (state, payload) {
         //Vue.set(state.messages, payload.massageId, payload.messageDetails)
         state.messages.push({
-            messageId: payload.massageId,
+            messageId: payload.messageId,
             ...payload.messageDetails
         })
+    },
+    setMessages (state, payload) {
+        state.messages = payload
     },
     clearMessages (state) {
         state.messages = []
@@ -75,12 +79,12 @@ const actions = {
             console.log(error.message)
         })
     },
-    loginUser({}, payload) {        
-       
+    loginUser({}, payload) {
+
         // Logando o usuário
         firebase.auth().signInWithEmailAndPassword(payload.email, payload.password)
         .then(response => {
-            console.log(response)    
+            console.log(response)
         }).catch(error => {
             console.log(error.message)
         })
@@ -93,10 +97,10 @@ const actions = {
 	handleAuthStateChanged({ commit, dispatch, state }) {
 
         // Método que musa o status do usuário
-		firebase.auth().onAuthStateChanged(user => {      
-            
+		firebase.auth().onAuthStateChanged(user => {
+
 		  if (user) {
-		    // O usuário está logado           
+		    // O usuário está logado
 		    let userId = user.uid
             // Abaixo estamos pegando os dados do usuário logado
 		    firebase.database().ref('users/' + userId).once('value', snapshot => {
@@ -107,7 +111,7 @@ const actions = {
 		    		email: userDetails.email,
 		    		userId: userId
 		    	})
-		    })		 
+		    })
             // Vamos atualizar (no firebase) os dados do usuário quando ele logar (colocar online, por exemplo)
             dispatch('firebaseUpdateUser', {
                 userId: userId,
@@ -121,8 +125,8 @@ const actions = {
             // Redirecionando o usuário para a página principal
             this.$router.push('/')
 		  }
-		  else {            
-		  	// O usuário está deslogado			  
+		  else {
+		  	// O usuário está deslogado
             // Vamos atualizar (no firebase) os dados do usuário quando ele logar (colocar offline, por exemplo)
             dispatch('firebaseUpdateUser', {
                 userId: state.userDetails.userId,
@@ -160,7 +164,7 @@ const actions = {
                 userDetails
             })
         })
-        
+
         // Quando é modificado algo
         firebase.database().ref('users').on('child_changed', snapshot => {
 			let userDetails = snapshot.val()
@@ -172,26 +176,52 @@ const actions = {
 		})
     },
     // Criando a action que pega as mensagens de um determinado usuário
-    firebaseGetMessages({ commit, state }, otherUserId) {
-		let userId = state.userDetails.userId        
-		messagesRef = firebase.database().ref('chats/' + userId + '/' + otherUserId)
-		messagesRef.on('child_added', snapshot => { // Isso é disparado toda ver que uma nova mensagem é adicionada
-			let messageDetails = snapshot.val()
-			let messageId = snapshot.key
-            //console.log(messageDetails)
-            //console.log(messageId)
-			commit('addMessage', {
-				messageId,
-				messageDetails
-			})
-		})
-	},
+    async firebaseGetMessages({ commit, state }, otherUserId) {
+        let userId = state.userDetails.userId
+        messagesRef = firebase.database().ref('chats/' + userId + '/' + otherUserId)
+
+        const snapshot = await messagesRef.once('value')
+        const messages = []
+        let lastMessageKey = null
+
+        snapshot.forEach(childSnapshot => {
+            lastMessageKey = childSnapshot.key
+            messages.push({
+                messageId: childSnapshot.key,
+                ...childSnapshot.val()
+            })
+        })
+
+        commit('setMessages', messages)
+
+        messagesListenerRef = messagesRef.limitToLast(1)
+        let skipCurrentLastMessage = Boolean(lastMessageKey)
+
+        messagesListenerRef.on('child_added', snapshot => {
+            if (skipCurrentLastMessage && snapshot.key === lastMessageKey) {
+                skipCurrentLastMessage = false
+                return
+            }
+
+            skipCurrentLastMessage = false
+            let messageDetails = snapshot.val()
+            let messageId = snapshot.key
+
+            commit('addMessage', {
+                messageId,
+                messageDetails
+            })
+        })
+    },
     // Action que limpa a conversa (para quando abrir a janela, a conversa anterior não ser exibida na janela atual)
     firebaseStopGettingMessages({ commit }) {
-		if (messagesRef) {
-			messagesRef.off('child_added') // Desligando o ouvinte
-			commit('clearMessages')
-		}
+        if (messagesListenerRef) {
+            messagesListenerRef.off('child_added') // Desligando o ouvinte
+            messagesListenerRef = null
+        }
+
+        messagesRef = null
+        commit('clearMessages')
 	},
     firebaseSendMessage({}, payload) {
         firebase.database().ref('chats/' + state.userDetails.userId + '/' + payload.otherUserId).push(payload.message)
@@ -208,9 +238,9 @@ const getters = {
 		let usersFiltered = []
 		state.users.forEach(item => {
 
-			if (item.userId !== state.userDetails.userId) {               
+			if (item.userId !== state.userDetails.userId) {
 				usersFiltered.push(item)
-			}            
+			}
 		})
 
 		return usersFiltered
@@ -219,7 +249,7 @@ const getters = {
 
 export default {
     namespaced: true,
-    state, 
+    state,
     mutations,
     actions,
     getters

@@ -166,30 +166,20 @@
       }
     },
     watch: {
-      // Esse observador verá quando tem uma nova mensagem. Então, quando tiver, será
-      /*
-	  	messages: function(val) {
-        console.log(Object.keys(val))
-	  		if (Object.keys(val).length) {
-	  			this.scrollToBottom()
-	  			setTimeout(() => {
-	  				this.showMessages = true
-	  			}, 200)
-	  		}
-	  	}
-      */
-      // Essa parte abaixo foi feita pra consertar um erro (seguindo dica de um usuário na aula 14)
-      messages: { handler(val) {
-        // console.log(Object.keys(val))
-	  		if (Object.keys(val).length) {
-	  			this.scrollToBottom()
-	  			setTimeout(() => {
-	  				this.showMessages = true
-	  			}, 200)
-	  		}
-      }, deep: true }
-	  },
+      'messagesList.length' (value) {
+    		if (!value) {
+    			this.showMessages = false
+    			return
+    		}
+
+    		this.scrollToBottom()
+    		setTimeout(() => {
+    			this.showMessages = true
+    		}, 60)
+    	}
+    },
     mounted () {
+    this.showMessages = false
 
       // Limpando a caixa de mensagem, para as conversas de janelas fechadas não serem exibidas na nova janela
 	  	this.firebaseStopGettingMessages()
