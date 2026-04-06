@@ -26,21 +26,57 @@
     </div>
 
     <div v-else :class="{ 'invisible' : !showMessages }" class="chat-messages q-pa-md column col justify-end">
-      <q-chat-message
+      <div
         v-for="message in messagesList"
         :key="message.messageId"
-        :bg-color="message.from == 'me' ? ($q.dark.isActive ? 'teal-9' : 'grey-3') : ($q.dark.isActive ? 'green-8' : 'green-3')"
-        :text-color="message.from == 'me' ? ($q.dark.isActive ? 'white' : 'dark') : ($q.dark.isActive ? 'white' : 'dark')"
-        :text="[message.text]"
-        :sent="message.from == 'me'"
-        :name="formatName(message)"
-        class="chat-bubble"
-      />
+        class="chat-message-row"
+        :class="{ 'chat-message-row--sent': message.from == 'me' }"
+      >
+        <div
+          v-if="message.replyTo"
+          class="chat-reply-reference"
+          :class="{ 'chat-reply-reference--sent': message.from == 'me' }"
+        >
+          <div class="chat-reply-reference__author">{{ getReplyAuthorName(message.replyTo) }}</div>
+          <div class="chat-reply-reference__text">{{ getMessageSnippet(message.replyTo.text) }}</div>
+        </div>
+
+        <q-chat-message
+          :bg-color="message.from == 'me' ? ($q.dark.isActive ? 'teal-9' : 'grey-3') : ($q.dark.isActive ? 'green-8' : 'green-3')"
+          :text-color="message.from == 'me' ? ($q.dark.isActive ? 'white' : 'dark') : ($q.dark.isActive ? 'white' : 'dark')"
+          :text="[message.text]"
+          :sent="message.from == 'me'"
+          :name="formatName(message)"
+          class="chat-bubble"
+        />
+
+        <div class="chat-message-actions" :class="{ 'chat-message-actions--sent': message.from == 'me' }">
+          <q-btn
+            flat
+            dense
+            no-caps
+            icon="reply"
+            color="primary"
+            class="chat-message-actions__btn"
+            @click="prepareReply(message)"
+          >
+            <span class="chat-message-actions__label">Responder</span>
+          </q-btn>
+        </div>
+      </div>
     </div>
 
     <q-footer elevated class="chat-footer">
       <q-toolbar class="chat-footer__toolbar">
         <q-form class="full-width" @submit.prevent="sendMessage">
+          <div v-if="replyingToMessage" class="chat-reply-composer" :class="{ 'chat-reply-composer--dark': $q.dark.isActive }">
+            <div class="chat-reply-composer__content">
+              <div class="chat-reply-composer__title">Respondendo para {{ getReplyAuthorName(replyingToMessage) }}</div>
+              <div class="chat-reply-composer__text">{{ getMessageSnippet(replyingToMessage.text) }}</div>
+            </div>
+            <q-btn flat round dense icon="close" color="grey-7" @click="cancelReply" />
+          </div>
+
           <q-input
             :bg-color="$q.dark.isActive ? 'dark-page' : 'white'"
             outlined
@@ -80,7 +116,8 @@
     data () {
       return {
         newMessage: '',
-        showMessages: false
+        showMessages: false,
+        replyingToMessage: null
       }
     },
     computed: {
@@ -100,10 +137,47 @@
         }
 
         this.showMessages = false
+        this.cancelReply()
         this.setActiveChatUser(otherUserId)
         this.markConversationAsRead(otherUserId)
         this.firebaseStopGettingMessages()
         await this.firebaseGetMessages(otherUserId)
+      },
+      prepareReply (message) {
+        this.replyingToMessage = {
+          messageId: message.messageId,
+          text: message.text || '',
+          from: message.from,
+          name: message.from === 'me' ? this.userDetails.name : this.safeOtherUserDetails.name,
+          timestamp: message.timestamp || ''
+        }
+
+        this.$refs.newMessage.focus()
+      },
+      cancelReply () {
+        this.replyingToMessage = null
+      },
+      getReplyAuthorName (replyMessage) {
+        if (!replyMessage) {
+          return ''
+        }
+
+        if (replyMessage.name) {
+          return replyMessage.name
+        }
+
+        return replyMessage.from === 'me'
+          ? this.userDetails.name
+          : this.safeOtherUserDetails.name
+      },
+      getMessageSnippet (text = '') {
+        const normalizedText = String(text).trim()
+
+        if (normalizedText.length <= 90) {
+          return normalizedText
+        }
+
+        return `${normalizedText.slice(0, 90)}...`
       },
       formatName(message) {
         const nome = message.from === 'me'
@@ -164,7 +238,11 @@
           message: {
             text: this.newMessage.trim(),
             from: 'me',
-            timestamp: dateBr
+            timestamp: dateBr,
+            replyTo: this.replyingToMessage ? {
+              ...this.replyingToMessage,
+              text: this.getMessageSnippet(this.replyingToMessage.text)
+            } : null
           },
           otherUserId: this.$route.params.otherUserId
         })
@@ -173,6 +251,7 @@
       },
       clearMessage () {
         this.newMessage = ''
+        this.cancelReply()
         this.$refs.newMessage.focus()
       },
       scrollToBottom () {
@@ -309,6 +388,58 @@
 .chat-bubble
   margin-bottom 10px
 
+.chat-message-row
+  display flex
+  flex-direction column
+  margin-bottom 10px
+
+.chat-message-row--sent
+  align-items flex-end
+
+.chat-message-actions
+  display flex
+  justify-content flex-start
+  margin-top -2px
+  padding-left 8px
+
+.chat-message-actions--sent
+  justify-content flex-end
+  padding-right 8px
+  padding-left 0
+
+.chat-message-actions__btn
+  min-height auto
+  padding 2px 6px
+
+.chat-message-actions__label
+  margin-left 4px
+  font-size 0.78rem
+
+.chat-reply-reference
+  max-width 78%
+  margin-bottom 6px
+  padding 10px 12px
+  border-left 4px solid rgba(7, 94, 84, 0.72)
+  border-radius 14px
+  background rgba(255, 255, 255, 0.46)
+  box-shadow 0 8px 20px rgba(10, 54, 49, 0.06)
+
+.chat-reply-reference--sent
+  border-left-color rgba(129, 199, 132, 0.9)
+
+.body--dark .chat-reply-reference
+  background rgba(255, 255, 255, 0.08)
+
+.chat-reply-reference__author
+  font-size 0.78rem
+  font-weight 700
+  margin-bottom 4px
+
+.chat-reply-reference__text
+  font-size 0.84rem
+  line-height 1.4
+  opacity 0.88
+
 .chat-footer
   background rgba(255, 255, 255, 0.78)
   backdrop-filter blur(12px)
@@ -320,6 +451,40 @@
 
 .chat-footer__toolbar
   padding 10px 12px calc(10px + env(safe-area-inset-bottom))
+
+.chat-reply-composer
+  display flex
+  align-items flex-start
+  gap 10px
+  margin-bottom 10px
+  padding 10px 12px
+  border-radius 18px
+  background rgba(255, 255, 255, 0.86)
+  border-left 4px solid rgba(7, 94, 84, 0.78)
+  box-shadow 0 10px 24px rgba(10, 54, 49, 0.08)
+
+.chat-reply-composer--dark
+  background rgba(255, 255, 255, 0.06)
+
+.chat-reply-composer__content
+  flex 1
+  min-width 0
+
+.chat-reply-composer__title
+  font-size 0.8rem
+  font-weight 700
+  margin-bottom 4px
+
+.chat-reply-composer__text
+  font-size 0.88rem
+  line-height 1.4
+  color #5f6d6a
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+
+.body--dark .chat-reply-composer__text
+  color #a0afac
 
 .chat-footer__input
   box-shadow 0 10px 22px rgba(10, 54, 49, 0.08)
