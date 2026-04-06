@@ -3,41 +3,51 @@
 
     <q-banner
   		v-if="!otherUserDetails.online"
-  		class="bg-yellow-4 text-center fixed-top">
+		class="chat-status-banner chat-status-banner--offline text-center fixed-top">
       {{ otherUserDetails.name }} está offline.
     </q-banner>
 
     <q-banner
   	  v-else
-  		class="bg-green-2 text-center">
+		class="chat-status-banner chat-status-banner--online text-center">
       {{ otherUserDetails.name }} está online.
     </q-banner>
 
-    <div :class="{ 'invisible' : !showMessages }" class="q-pa-md column col justify-end">
+    <div v-if="!messagesList.length" class="chat-empty-state column items-center justify-center col q-px-lg">
+      <q-icon name="chat_bubble" size="56px" color="primary" />
+      <div class="chat-empty-state__title">Ainda não há mensagens nesta conversa.</div>
+      <div class="chat-empty-state__text">Envie a primeira mensagem para começar.</div>
+    </div>
+
+    <div v-else :class="{ 'invisible' : !showMessages }" class="chat-messages q-pa-md column col justify-end">
       <q-chat-message
-        v-for="message in messages"
+        v-for="message in messagesList"
         :key="message.messageId"
-        :bg-color="message.from == 'me' ? 'grey-3' : '#81c784'"
+        :bg-color="message.from == 'me' ? ($q.dark.isActive ? 'teal-9' : 'grey-3') : ($q.dark.isActive ? 'green-8' : 'green-3')"
+        :text-color="message.from == 'me' ? ($q.dark.isActive ? 'white' : 'dark') : ($q.dark.isActive ? 'white' : 'dark')"
         :text="[message.text]"
         :sent="message.from == 'me'"
         :name="formatName(message)"
+        class="chat-bubble"
       />
     </div>
 
-    <q-footer elevated>
-      <q-toolbar>
-        <q-form class="full-width">
+    <q-footer elevated class="chat-footer">
+      <q-toolbar class="chat-footer__toolbar">
+        <q-form class="full-width" @submit.prevent="sendMessage">
           <q-input
-            bg-color="white"
+            :bg-color="$q.dark.isActive ? 'dark-page' : 'white'"
             outlined
             rounded
             v-model="newMessage"
             @blur="scrollToBottom"
             ref="newMessage"
             label="Mensagem"
-            dense>
+            dense
+            :dark="$q.dark.isActive"
+            class="chat-footer__input">
             <template v-slot:after>
-              <q-btn round dense flat icon="send" color="white" @click="sendMessage" />
+              <q-btn round dense flat icon="send" color="primary" @click="sendMessage" />
             </template>
           </q-input>
         </q-form>
@@ -51,6 +61,13 @@
   import { mapState, mapActions } from 'vuex'
   import mixinOtherUserDetails from 'src/mixins/mixin-other-user-details.js'
 
+  const emptyUser = {
+    userId: '',
+    name: '',
+    email: '',
+    online: false
+  }
+
   export default {
     name: 'PageChat',
     mixins: [mixinOtherUserDetails],
@@ -61,14 +78,20 @@
       }
     },
     computed: {
-      ...mapState('store', ['messages', 'userDetails'])
+      ...mapState('store', ['messages', 'userDetails']),
+      messagesList () {
+        return Array.isArray(this.messages) ? this.messages : []
+      },
+      safeOtherUserDetails () {
+        return this.otherUserDetails || emptyUser
+      }
     },
     methods: {
       ...mapActions('store', ['firebaseGetMessages','firebaseStopGettingMessages','firebaseSendMessage']),
       formatName(message) {
         const nome = message.from === 'me'
           ? this.userDetails.name
-          : this.otherUserDetails.name
+          : this.safeOtherUserDetails.name
 
         if (!message.timestamp) return nome
 
@@ -183,25 +206,95 @@
 </script>
 
 <style lang="stylus">
-	.page-chat
-		background #e2dfd5
-		&:after
-			content ''
-			display block
-			position fixed
-			left 0
-			right 0
-			top 0
-			bottom 0
-			z-index 0
-			opacity 0.1
-			background-image radial-gradient(circle at 100% 150%, silver 24%, white 25%, white 28%, silver 29%, silver 36%, white 36%, white 40%, transparent 40%, transparent), radial-gradient(circle at 0    150%, silver 24%, white 25%, white 28%, silver 29%, silver 36%, white 36%, white 40%, transparent 40%, transparent), radial-gradient(circle at 50%  100%, white 10%, silver 11%, silver 23%, white 24%, white 30%, silver 31%, silver 43%, white 44%, white 50%, silver 51%, silver 63%, white 64%, white 71%, transparent 71%, transparent), radial-gradient(circle at 100% 50%, white 5%, silver 6%, silver 15%, white 16%, white 20%, silver 21%, silver 30%, white 31%, white 35%, silver 36%, silver 45%, white 46%, white 49%, transparent 50%, transparent), radial-gradient(circle at 0    50%, white 5%, silver 6%, silver 15%, white 16%, white 20%, silver 21%, silver 30%, white 31%, white 35%, silver 36%, silver 45%, white 46%, white 49%, transparent 50%, transparent)
-			background-size 100px 50px
-	.q-banner
-		top 50px
-		z-index 2
-		opacity 0.8
-	.q-message
-		z-index 1
+.page-chat
+  min-height calc(100vh - 88px)
+  background linear-gradient(180deg, rgba(239, 245, 241, 1) 0%, rgba(227, 234, 230, 1) 100%)
+
+  &:after
+    content ''
+    display block
+    position fixed
+    left 0
+    right 0
+    top 0
+    bottom 0
+    z-index 0
+    opacity 0.08
+    background-image radial-gradient(circle at 100% 150%, silver 24%, white 25%, white 28%, silver 29%, silver 36%, white 36%, white 40%, transparent 40%, transparent), radial-gradient(circle at 0 150%, silver 24%, white 25%, white 28%, silver 29%, silver 36%, white 36%, white 40%, transparent 40%, transparent), radial-gradient(circle at 50% 100%, white 10%, silver 11%, silver 23%, white 24%, white 30%, silver 31%, silver 43%, white 44%, white 50%, silver 51%, silver 63%, white 64%, white 71%, transparent 71%, transparent), radial-gradient(circle at 100% 50%, white 5%, silver 6%, silver 15%, white 16%, white 20%, silver 21%, silver 30%, white 31%, white 35%, silver 36%, silver 45%, white 46%, white 49%, transparent 50%, transparent), radial-gradient(circle at 0 50%, white 5%, silver 6%, silver 15%, white 16%, white 20%, silver 21%, silver 30%, white 31%, white 35%, silver 36%, silver 45%, white 46%, white 49%, transparent 50%, transparent)
+    background-size 100px 50px
+
+.body--dark .page-chat
+  background linear-gradient(180deg, rgba(14, 21, 24, 1) 0%, rgba(10, 14, 17, 1) 100%)
+
+.page-chat .q-banner
+  top 78px
+  z-index 2
+  opacity 0.95
+
+.page-chat .q-message
+  z-index 1
+
+.chat-status-banner
+  margin 12px auto 0
+  width fit-content
+  padding 8px 14px
+  border-radius 999px
+  box-shadow 0 10px 24px rgba(0, 0, 0, 0.08)
+
+.chat-status-banner--online
+  background rgba(129, 199, 132, 0.2)
+  color #1a5d1e
+
+.chat-status-banner--offline
+  background rgba(255, 214, 102, 0.32)
+  color #7d5b00
+
+.body--dark .chat-status-banner--online
+  background rgba(46, 125, 50, 0.38)
+  color #d9f4dd
+
+.body--dark .chat-status-banner--offline
+  background rgba(255, 193, 7, 0.28)
+  color #fff1bf
+
+.chat-messages
+  position relative
+  z-index 1
+
+.chat-empty-state
+  position relative
+  z-index 1
+  text-align center
+
+.chat-empty-state__title
+  margin-top 14px
+  font-size 1.08rem
+  font-weight 700
+
+.chat-empty-state__text
+  margin-top 8px
+  max-width 320px
+  color #667571
+
+.body--dark .chat-empty-state__text
+  color #99a8a4
+
+.chat-bubble
+  margin-bottom 10px
+
+.chat-footer
+  background rgba(255, 255, 255, 0.78)
+  backdrop-filter blur(12px)
+  border-top 1px solid rgba(7, 94, 84, 0.08)
+
+.body--dark .chat-footer
+  background rgba(11, 18, 19, 0.78)
+  border-top 1px solid rgba(126, 231, 213, 0.08)
+
+.chat-footer__toolbar
+  padding 10px 12px calc(10px + env(safe-area-inset-bottom))
+
+.chat-footer__input
+  box-shadow 0 10px 22px rgba(10, 54, 49, 0.08)
 
 </style>
