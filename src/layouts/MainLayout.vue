@@ -21,6 +21,17 @@
 
         <div class="header-side header-side--right">
           <q-btn
+            v-if="notificationsSupported"
+            @click="enableNotifications"
+            :icon="notificationsIcon"
+            flat
+            dense
+            round
+            class="header-icon-btn q-mr-xs"
+            :title="notificationsTitle"
+          />
+
+          <q-btn
             @click="toggleDarkMode"
             :icon="isDarkMode ? 'light_mode' : 'dark_mode'"
             flat
@@ -70,9 +81,42 @@ export default {
   name: 'MainLayout',
   mixins: [mixinOtherUserDetails],
   computed: {
-    ...mapState('store', ['userDetails']),
+    ...mapState('store', ['userDetails', 'notificationPermission']),
     isDarkMode () {
       return this.$q.dark.isActive
+    },
+    notificationsSupported () {
+      return this.notificationPermission !== 'unsupported'
+    },
+    notificationsIcon () {
+      if (!this.notificationsSupported) {
+        return 'notifications_off'
+      }
+
+      if (this.notificationPermission === 'granted') {
+        return 'notifications_active'
+      }
+
+      if (this.notificationPermission === 'denied') {
+        return 'notifications_off'
+      }
+
+      return 'notifications'
+    },
+    notificationsTitle () {
+      if (!this.notificationsSupported) {
+        return 'Notificações não suportadas neste dispositivo'
+      }
+
+      if (this.notificationPermission === 'granted') {
+        return 'Notificações do navegador ativadas'
+      }
+
+      if (this.notificationPermission === 'denied') {
+        return 'As notificações foram bloqueadas no navegador'
+      }
+
+      return 'Ativar notificações de novas mensagens'
     },
     title () {
 
@@ -100,7 +144,14 @@ export default {
     this.$q.dark.set(false)
   },
   methods: {
-      ...mapActions('store', ['logoutUser']),
+      ...mapActions('store', ['logoutUser', 'requestNotificationPermission']),
+      async enableNotifications () {
+        if (this.notificationPermission === 'granted' || this.notificationPermission === 'denied') {
+          return
+        }
+
+        await this.requestNotificationPermission()
+      },
       toggleDarkMode () {
         const nextMode = !this.$q.dark.isActive
         this.$q.dark.set(nextMode)

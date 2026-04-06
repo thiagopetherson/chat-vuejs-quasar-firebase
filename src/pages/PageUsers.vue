@@ -12,21 +12,24 @@
       </div>
 
       <q-list v-if="usersList.length" class="users-list" separator>
-        <q-item v-for="user in usersList" :key="user.userId" :to="'/chat/' + user.userId" clickable v-ripple class="users-list__item">
+        <q-item v-for="user in usersList" :key="getUserId(user)" :to="'/chat/' + getUserId(user)" clickable v-ripple class="users-list__item" :class="{ 'users-list__item--unread': getUserUnreadCount(user) > 0 }">
           <q-item-section avatar>
             <q-avatar color="primary" text-color="white" class="users-list__avatar">
-              {{ user.name.substr(0,1) }}
+              {{ getUserName(user).substr(0,1) }}
             </q-avatar>
           </q-item-section>
 
           <q-item-section>
-            <q-item-label class="users-list__name">{{ user.name }}</q-item-label>
-            <q-item-label caption class="users-list__email">{{ user.email }}</q-item-label>
+            <q-item-label class="users-list__name">{{ getUserName(user) }}</q-item-label>
+            <q-item-label caption class="users-list__email">{{ getUserSecondaryText(user) }}</q-item-label>
           </q-item-section>
 
-          <q-item-section side>
-            <q-badge :color="user.online ? 'light-green-5' : 'grey-5'" :text-color="user.online ? 'dark' : 'white'" class="users-list__status">
-              {{ user.online ? 'Online' : 'Offline' }}
+          <q-item-section side class="users-list__side">
+            <q-badge v-if="getUserUnreadCount(user) > 0" color="negative" text-color="white" class="users-list__unread">
+              {{ getUserUnreadCount(user) }}
+            </q-badge>
+            <q-badge :color="getUserOnline(user) ? 'light-green-5' : 'grey-5'" :text-color="getUserOnline(user) ? 'dark' : 'white'" class="users-list__status">
+              {{ getUserOnline(user) ? 'Online' : 'Offline' }}
             </q-badge>
           </q-item-section>
         </q-item>
@@ -49,16 +52,47 @@
 
     }
   },
+  methods: {
+    getUserId (user) {
+      return user && user.userId ? user.userId : ''
+    },
+    getUserName (user) {
+      return user && user.name ? user.name : ''
+    },
+    getUserUnreadCount (user) {
+      return user && user.unreadCount ? user.unreadCount : 0
+    },
+    getUserOnline (user) {
+      return Boolean(user && user.online)
+    },
+    getUserSecondaryText (user) {
+      const unreadCount = this.getUserUnreadCount(user)
+
+      if (unreadCount > 0) {
+        return `${unreadCount} ${unreadCount === 1 ? 'mensagem não lida' : 'mensagens não lidas'}`
+      }
+
+      return user && user.email ? user.email : ''
+    }
+  },
   computed: {
     usersList () {
       const users = this.$store.getters['store/users']
+      const unreadMessages = this.$store.state.store.unreadMessages || {}
 
       return (Array.isArray(users) ? users : []).map(user => ({
         userId: user && user.userId ? user.userId : '',
         name: user && user.name ? user.name : '',
         email: user && user.email ? user.email : '',
-        online: Boolean(user && user.online)
-      }))
+        online: Boolean(user && user.online),
+        unreadCount: unreadMessages[user && user.userId ? user.userId : ''] || 0
+      })).sort((firstUser, secondUser) => {
+        if (firstUser.unreadCount !== secondUser.unreadCount) {
+          return secondUser.unreadCount - firstUser.unreadCount
+        }
+
+        return firstUser.name.localeCompare(secondUser.name)
+      })
     }
   },
   mounted() {
@@ -130,6 +164,12 @@
 .users-list__item
   min-height 82px
 
+.users-list__item--unread
+  background rgba(7, 94, 84, 0.08)
+
+.body--dark .users-list__item--unread
+  background rgba(126, 231, 213, 0.08)
+
 .users-list__item:hover
   background rgba(7, 94, 84, 0.05)
 
@@ -153,6 +193,14 @@
 
 .users-list__status
   padding 6px 10px
+  border-radius 999px
+
+.users-list__side
+  gap 8px
+
+.users-list__unread
+  min-width 28px
+  justify-content center
   border-radius 999px
 
 .users-empty

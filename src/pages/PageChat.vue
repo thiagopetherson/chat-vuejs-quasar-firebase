@@ -13,7 +13,13 @@
       {{ otherUserDetails.name }} está online.
     </q-banner>
 
-    <div v-if="!messagesList.length" class="chat-empty-state column items-center justify-center col q-px-lg">
+    <div v-if="chatLoading" class="chat-loading-state column items-center justify-center col q-px-lg">
+      <q-spinner-dots color="primary" size="56px" />
+      <div class="chat-loading-state__title">Carregando histórico...</div>
+      <div class="chat-loading-state__text">A conversa está sendo preparada. Em rede lenta, isso pode levar alguns instantes.</div>
+    </div>
+
+    <div v-else-if="!messagesList.length" class="chat-empty-state column items-center justify-center col q-px-lg">
       <q-icon name="chat_bubble" size="56px" color="primary" />
       <div class="chat-empty-state__title">Ainda não há mensagens nesta conversa.</div>
       <div class="chat-empty-state__text">Envie a primeira mensagem para começar.</div>
@@ -78,7 +84,7 @@
       }
     },
     computed: {
-      ...mapState('store', ['messages', 'userDetails']),
+      ...mapState('store', ['messages', 'userDetails', 'chatLoading']),
       messagesList () {
         return Array.isArray(this.messages) ? this.messages : []
       },
@@ -87,7 +93,18 @@
       }
     },
     methods: {
-      ...mapActions('store', ['firebaseGetMessages','firebaseStopGettingMessages','firebaseSendMessage']),
+      ...mapActions('store', ['firebaseGetMessages','firebaseStopGettingMessages','firebaseSendMessage', 'setActiveChatUser', 'markConversationAsRead']),
+      async openConversation (otherUserId) {
+        if (!otherUserId) {
+          return
+        }
+
+        this.showMessages = false
+        this.setActiveChatUser(otherUserId)
+        this.markConversationAsRead(otherUserId)
+        this.firebaseStopGettingMessages()
+        await this.firebaseGetMessages(otherUserId)
+      },
       formatName(message) {
         const nome = message.from === 'me'
           ? this.userDetails.name
@@ -166,6 +183,13 @@
       }
     },
     watch: {
+      '$route.params.otherUserId' (value, oldValue) {
+      if (!value || value === oldValue) {
+        return
+      }
+
+      this.openConversation(value)
+    },
       'messagesList.length' (value) {
     		if (!value) {
     			this.showMessages = false
@@ -179,17 +203,12 @@
     	}
     },
     mounted () {
-    this.showMessages = false
-
-      // Limpando a caixa de mensagem, para as conversas de janelas fechadas não serem exibidas na nova janela
-	  	this.firebaseStopGettingMessages()
-      //console.log(this.$route.params.otherUserId)
-      this.firebaseGetMessages(this.$route.params.otherUserId)
-      //console.log(this.messages)
+      this.openConversation(this.$route.params.otherUserId)
     },
-	  destroyed() {
+	  beforeUnmount() {
       // Limpando a caixa de mensagem, para as conversas de janelas fechadas não serem exibidas na nova janela
 	  	this.firebaseStopGettingMessages()
+			this.setActiveChatUser('')
 	  }
   }
 
@@ -250,6 +269,24 @@
 .chat-messages
   position relative
   z-index 1
+
+.chat-loading-state
+  position relative
+  z-index 1
+  text-align center
+
+.chat-loading-state__title
+  margin-top 18px
+  font-size 1.08rem
+  font-weight 700
+
+.chat-loading-state__text
+  margin-top 8px
+  max-width 340px
+  color #667571
+
+.body--dark .chat-loading-state__text
+  color #99a8a4
 
 .chat-empty-state
   position relative
