@@ -1,4 +1,4 @@
-# Chat Realtime (Smackchat)
+# Chat Realtime (SmartChat)
 Desenvolvendo uma aplicação PWA de chat realtime utilizando VueJS, Quasar Framework e Firebase.
 - Link para a Aplicação: https://tpchat.netlify.app/
 - Caminho do executável (instalador) da aplicação desktop: dist\electron\Packaged

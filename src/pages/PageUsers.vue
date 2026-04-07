@@ -1,5 +1,5 @@
 <template>
-  <q-page class="users-page q-pa-md">
+  <q-page class="users-page app-mobile-page q-pa-md">
     <div class="users-shell q-mx-auto">
       <div class="users-hero q-mb-md">
         <div>
@@ -104,7 +104,7 @@
 
 <style lang="stylus">
 .users-page
-  min-height calc(100vh - 88px)
+  padding-bottom calc(16px + env(safe-area-inset-bottom))
 
 .users-shell
   max-width 920px
@@ -115,7 +115,7 @@
   align-items center
   gap 12px
   padding 18px 22px
-  border-radius 24px
+  border-radius 12px
   background rgba(255, 255, 255, 0.76)
   border 1px solid rgba(7, 94, 84, 0.08)
   box-shadow 0 16px 40px rgba(10, 54, 49, 0.08)
@@ -146,11 +146,11 @@
 
 .users-hero__badge
   padding 8px 12px
-  border-radius 999px
+  border-radius 8px
 
 .users-list
   margin-top 18px
-  border-radius 24px
+  border-radius 12px
   overflow hidden
   background rgba(255, 255, 255, 0.82)
   border 1px solid rgba(7, 94, 84, 0.08)
@@ -193,7 +193,7 @@
 
 .users-list__status
   padding 6px 10px
-  border-radius 999px
+  border-radius 8px
 
 .users-list__side
   gap 8px
@@ -201,12 +201,12 @@
 .users-list__unread
   min-width 28px
   justify-content center
-  border-radius 999px
+  border-radius 8px
 
 .users-empty
   margin-top 18px
   min-height 280px
-  border-radius 24px
+  border-radius 12px
   padding 32px
   text-align center
   background rgba(255, 255, 255, 0.82)
@@ -233,4 +233,8 @@
   .users-hero
     flex-direction column
     align-items flex-start
+
+  .users-list,
+  .users-empty
+    border-radius 10px
 </style>

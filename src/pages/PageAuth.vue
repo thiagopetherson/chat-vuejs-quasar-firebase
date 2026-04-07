@@ -1,12 +1,12 @@
 <template>
-  <q-page class="auth-page flex flex-center q-pa-md">
+  <q-page class="auth-page app-mobile-page flex flex-center q-pa-md">
     <div class="auth-page__glow auth-page__glow--one"></div>
     <div class="auth-page__glow auth-page__glow--two"></div>
 
     <q-card class="auth-card full-width">
       <q-card-section class="auth-card__hero">
-        <div class="auth-card__eyebrow">SmackChat</div>
-        <div class="auth-card__title">Converse em tempo real com uma interface mais limpa e objetiva.</div>
+        <div class="auth-card__eyebrow">SmartChat</div>
+        <div class="auth-card__title">O chat oficial da panelinha do Thiago para trocar ideia em tempo real.</div>
         <div class="auth-card__subtitle">Entre na sua conta ou crie um perfil para iniciar as conversas.</div>
       </q-card-section>
 
@@ -60,13 +60,12 @@ export default {
 .auth-page
   position relative
   overflow hidden
-  min-height calc(100vh - 88px)
 
 .auth-card
   position relative
   z-index 1
   max-width 520px
-  border-radius 28px
+  border-radius 12px
   background rgba(255, 255, 255, 0.88)
   box-shadow 0 24px 60px rgba(10, 54, 49, 0.16)
   border 1px solid rgba(7, 94, 84, 0.08)
@@ -138,7 +137,7 @@ export default {
 
 @media (max-width: 600px)
   .auth-card
-    border-radius 22px
+    border-radius 10px
 
   .auth-card__hero
     padding 24px 22px 18px

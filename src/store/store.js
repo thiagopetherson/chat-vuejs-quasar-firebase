@@ -4,13 +4,15 @@ import firebase from 'boot/firebase'
 let usersRef
 let messagesRef
 let messagesListenerRef
+let messagesChangesRef
 let conversationsRef
 let connectionRef
 let currentUserPresenceRef
 let messagesRequestToken = 0
 const knownConversationLastKeys = {}
+const deletedMessageText = 'Esta mensagem foi apagada.'
 
-const getSeenMessagesStorageKey = userId => `smackchat-seen-messages-${userId}`
+const getSeenMessagesStorageKey = userId => `smartchat-seen-messages-${userId}`
 
 const getDefaultNotificationPermission = () => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -72,6 +74,59 @@ const countUnreadIncomingMessages = (conversationDetails = {}, seenMessageId) =>
     }, 0)
 }
 
+const getBrazilTimestamp = () => {
+    return new Date().toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo'
+    })
+}
+
+const getMessageMatchSignature = (messageDetails = {}) => {
+    return JSON.stringify({
+        timestamp: messageDetails.timestamp || '',
+        text: messageDetails.text || '',
+        replyTo: messageDetails.replyTo || null,
+        deleted: Boolean(messageDetails.deleted)
+    })
+}
+
+const resolveMirroredMessageId = async ({ currentUserId, otherUserId, messageId, currentMessage }) => {
+    if (!currentUserId || !otherUserId || !messageId || !currentMessage) {
+        return ''
+    }
+
+    const mirroredMessageRef = firebase.database().ref('chats/' + otherUserId + '/' + currentUserId + '/' + messageId)
+    const mirroredMessageSnapshot = await mirroredMessageRef.once('value')
+
+    if (mirroredMessageSnapshot.exists()) {
+        return messageId
+    }
+
+    const conversationSnapshot = await firebase.database().ref('chats/' + otherUserId + '/' + currentUserId).once('value')
+    const currentSignature = getMessageMatchSignature(currentMessage)
+    let mirroredMessageId = ''
+
+    conversationSnapshot.forEach(childSnapshot => {
+        if (mirroredMessageId) {
+            return true
+        }
+
+        const candidateMessage = childSnapshot.val() || {}
+
+        if (candidateMessage.from !== 'them') {
+            return false
+        }
+
+        if (getMessageMatchSignature(candidateMessage) === currentSignature) {
+            mirroredMessageId = childSnapshot.key
+            return true
+        }
+
+        return false
+    })
+
+    return mirroredMessageId
+}
+
 const state = {
     userDetails: {},
     users: [], // Esse estado guardada a lista de usuários
@@ -131,6 +186,19 @@ const mutations = {
             messageId: payload.messageId,
             ...payload.messageDetails
         })
+    },
+    updateMessage (state, payload) {
+        const messageIndex = state.messages.findIndex(message => message.messageId === payload.messageId)
+
+        if (messageIndex === -1) {
+            return
+        }
+
+        state.messages[messageIndex] = {
+            ...state.messages[messageIndex],
+            ...payload.messageDetails,
+            messageId: payload.messageId
+        }
     },
     setMessages (state, payload) {
         state.messages = payload
@@ -195,33 +263,67 @@ const mutations = {
 }
 
 const actions = {
-    registerUser ({}, payload) {
+    async registerUser ({}, payload) {
+        const name = String(payload.name || '').trim()
+        const email = String(payload.email || '').trim().toLowerCase()
+        const password = String(payload.password || '')
 
-        // Registrando o usuário
-        firebase.auth().createUserWithEmailAndPassword(payload.email, payload.password)
-        .then(response => {
-            console.log(response)
-            // Pegando o id do usuário registrando (para além do Auth, registrarmos na tabela users)
-            let userId = response.user.uid
-            firebase.database().ref('users/' + userId).set({
-                name: payload.name,
-                email: payload.email,
+        if (!name || !email || !password) {
+            return {
+                ok: false,
+                error: 'Preencha nome, email e senha para criar a conta.'
+            }
+        }
+
+        let createdUser = null
+
+        try {
+            const response = await firebase.auth().createUserWithEmailAndPassword(email, password)
+            createdUser = response.user
+
+            await firebase.database().ref('users/' + createdUser.uid).set({
+                name,
+                email,
                 online: true
             })
 
-        }).catch(error => {
-            console.log(error.message)
-        })
-    },
-    loginUser({}, payload) {
+            return {
+                ok: true
+            }
+        } catch (error) {
+            if (createdUser) {
+                await createdUser.delete().catch(() => {})
+            }
 
-        // Logando o usuário
-        firebase.auth().signInWithEmailAndPassword(payload.email, payload.password)
-        .then(response => {
-            console.log(response)
-        }).catch(error => {
-            console.log(error.message)
-        })
+            return {
+                ok: false,
+                error: error.message || 'Não foi possível concluir o registro.'
+            }
+        }
+    },
+    async loginUser({}, payload) {
+        const email = String(payload.email || '').trim().toLowerCase()
+        const password = String(payload.password || '')
+
+        if (!email || !password) {
+            return {
+                ok: false,
+                error: 'Informe email e senha para entrar.'
+            }
+        }
+
+        try {
+            await firebase.auth().signInWithEmailAndPassword(email, password)
+
+            return {
+                ok: true
+            }
+        } catch (error) {
+            return {
+                ok: false,
+                error: error.message || 'Não foi possível fazer login.'
+            }
+        }
     },
     logoutUser({ commit, dispatch }) {
         // Deslogar o usuário
@@ -488,11 +590,29 @@ const actions = {
 
         const handleConversationChange = snapshotChanged => {
             const otherUserId = snapshotChanged.key
-            const lastMessage = getLastMessageFromConversation(snapshotChanged.val())
+            const conversationDetails = snapshotChanged.val() || {}
+            const lastMessage = getLastMessageFromConversation(conversationDetails)
 
             if (!lastMessage) {
+                delete knownConversationLastKeys[otherUserId]
+                commit('setUnreadMessageCount', {
+                    otherUserId,
+                    count: 0
+                })
                 return
             }
+
+            const seenMessages = getSeenMessages(userId)
+            const seenMessageId = seenMessages[otherUserId]
+            const isConversationOpen = state.activeChatUserId === otherUserId && state.appVisible
+            const unreadCount = isConversationOpen
+                ? 0
+                : countUnreadIncomingMessages(conversationDetails, seenMessageId)
+
+            commit('setUnreadMessageCount', {
+                otherUserId,
+                count: unreadCount
+            })
 
             const previousLastKey = knownConversationLastKeys[otherUserId]
 
@@ -503,12 +623,8 @@ const actions = {
             knownConversationLastKeys[otherUserId] = lastMessage.messageId
 
             const isIncomingMessage = lastMessage.from === 'them'
-            const isConversationOpen = state.activeChatUserId === otherUserId && state.appVisible
 
             if (isIncomingMessage && !isConversationOpen) {
-                commit('incrementUnreadMessage', {
-                    otherUserId
-                })
                 dispatch('notifyNewMessage', {
                     otherUserId,
                     message: lastMessage
@@ -547,7 +663,7 @@ const actions = {
         const notificationTitle = otherUser ? otherUser.name : 'Nova mensagem'
         const notification = new Notification(notificationTitle, {
             body: payload.message.text || 'Você recebeu uma nova mensagem.',
-            tag: 'smackchat-' + payload.otherUserId,
+            tag: 'smartchat-' + payload.otherUserId,
             renotify: true
         })
 
@@ -602,6 +718,7 @@ const actions = {
             }
 
             messagesListenerRef = messagesRef.limitToLast(1)
+            messagesChangesRef = messagesRef
             let skipCurrentLastMessage = Boolean(lastMessageKey)
 
             messagesListenerRef.on('child_added', snapshotMessage => {
@@ -630,6 +747,16 @@ const actions = {
                     })
                 }
             })
+
+            messagesChangesRef.on('child_changed', snapshotMessage => {
+                let messageDetails = snapshotMessage.val()
+                let messageId = snapshotMessage.key
+
+                commit('updateMessage', {
+                    messageId,
+                    messageDetails
+                })
+            })
         } finally {
             if (currentRequestToken === messagesRequestToken) {
                 commit('setChatLoading', false)
@@ -645,20 +772,169 @@ const actions = {
             messagesListenerRef = null
         }
 
+        if (messagesChangesRef) {
+            messagesChangesRef.off('child_changed')
+            messagesChangesRef = null
+        }
+
         messagesRef = null
         commit('setChatLoading', false)
         commit('clearMessages')
 	},
-    firebaseSendMessage({}, payload) {
-        firebase.database().ref('chats/' + state.userDetails.userId + '/' + payload.otherUserId).push(payload.message)
-        // Esse .push do firebase, adiciona um novo item com um novo id no final da lista lá do banco (com um id aleatório)
+    async firebaseSendMessage({ state }, payload) {
+        const currentUserId = state.userDetails.userId
+        const otherUserId = payload.otherUserId
 
-        const mirroredMessage = {
+        if (!currentUserId || !otherUserId) {
+            return {
+                ok: false,
+                error: 'Conversa inválida para envio da mensagem.'
+            }
+        }
+
+        const messageId = firebase.database().ref('chats/' + currentUserId + '/' + otherUserId).push().key
+        const message = {
             ...payload.message,
+            sharedId: messageId
+        }
+        const mirroredMessage = {
+            ...message,
             from: 'them'
         }
 
-        firebase.database().ref('chats/' + payload.otherUserId + '/' + state.userDetails.userId).push(mirroredMessage)
+        await firebase.database().ref().update({
+            ['chats/' + currentUserId + '/' + otherUserId + '/' + messageId]: message,
+            ['chats/' + otherUserId + '/' + currentUserId + '/' + messageId]: mirroredMessage
+        })
+
+        return {
+            ok: true,
+            messageId
+        }
+    },
+    async firebaseEditMessage({ state }, payload) {
+        const currentUserId = state.userDetails.userId
+        const otherUserId = payload.otherUserId
+        const messageId = payload.messageId
+        const nextText = String(payload.text || '').trim()
+
+        if (!currentUserId || !otherUserId || !messageId || !nextText) {
+            return {
+                ok: false,
+                error: 'Mensagem inválida para edição.'
+            }
+        }
+
+        const ownMessageRef = firebase.database().ref('chats/' + currentUserId + '/' + otherUserId + '/' + messageId)
+        const ownMessageSnapshot = await ownMessageRef.once('value')
+
+        if (!ownMessageSnapshot.exists()) {
+            return {
+                ok: false,
+                error: 'A mensagem não foi encontrada.'
+            }
+        }
+
+        const currentMessage = ownMessageSnapshot.val() || {}
+
+        if (currentMessage.from !== 'me' || currentMessage.deleted) {
+            return {
+                ok: false,
+                error: 'Só é possível editar mensagens enviadas por você.'
+            }
+        }
+
+        const mirroredMessageId = await resolveMirroredMessageId({
+            currentUserId,
+            otherUserId,
+            messageId,
+            currentMessage
+        })
+
+        const editedAt = getBrazilTimestamp()
+        const updates = {
+            ['chats/' + currentUserId + '/' + otherUserId + '/' + messageId + '/text']: nextText,
+            ['chats/' + currentUserId + '/' + otherUserId + '/' + messageId + '/editedAt']: editedAt
+        }
+
+        if (mirroredMessageId) {
+            updates['chats/' + otherUserId + '/' + currentUserId + '/' + mirroredMessageId + '/text'] = nextText
+            updates['chats/' + otherUserId + '/' + currentUserId + '/' + mirroredMessageId + '/editedAt'] = editedAt
+        }
+
+        await firebase.database().ref().update(updates)
+
+        return {
+            ok: true
+        }
+    },
+    async firebaseDeleteMessage({ state }, payload) {
+        const currentUserId = state.userDetails.userId
+        const otherUserId = payload.otherUserId
+        const messageId = payload.messageId
+
+        if (!currentUserId || !otherUserId || !messageId) {
+            return {
+                ok: false,
+                error: 'Mensagem inválida para remoção.'
+            }
+        }
+
+        const ownMessageRef = firebase.database().ref('chats/' + currentUserId + '/' + otherUserId + '/' + messageId)
+        const ownMessageSnapshot = await ownMessageRef.once('value')
+
+        if (!ownMessageSnapshot.exists()) {
+            return {
+                ok: false,
+                error: 'A mensagem não foi encontrada.'
+            }
+        }
+
+        const currentMessage = ownMessageSnapshot.val() || {}
+
+        if (currentMessage.from !== 'me' || currentMessage.deleted) {
+            return {
+                ok: false,
+                error: 'Só é possível apagar mensagens enviadas por você.'
+            }
+        }
+
+        const mirroredMessageId = await resolveMirroredMessageId({
+            currentUserId,
+            otherUserId,
+            messageId,
+            currentMessage
+        })
+
+        const deletedAt = getBrazilTimestamp()
+        const deletionPayload = {
+            text: deletedMessageText,
+            deleted: true,
+            deletedAt,
+            editedAt: null,
+            replyTo: null
+        }
+        const updates = {
+            ['chats/' + currentUserId + '/' + otherUserId + '/' + messageId + '/text']: deletionPayload.text,
+            ['chats/' + currentUserId + '/' + otherUserId + '/' + messageId + '/deleted']: deletionPayload.deleted,
+            ['chats/' + currentUserId + '/' + otherUserId + '/' + messageId + '/deletedAt']: deletionPayload.deletedAt,
+            ['chats/' + currentUserId + '/' + otherUserId + '/' + messageId + '/editedAt']: null,
+            ['chats/' + currentUserId + '/' + otherUserId + '/' + messageId + '/replyTo']: null
+        }
+
+        if (mirroredMessageId) {
+            updates['chats/' + otherUserId + '/' + currentUserId + '/' + mirroredMessageId + '/text'] = deletionPayload.text
+            updates['chats/' + otherUserId + '/' + currentUserId + '/' + mirroredMessageId + '/deleted'] = deletionPayload.deleted
+            updates['chats/' + otherUserId + '/' + currentUserId + '/' + mirroredMessageId + '/deletedAt'] = deletionPayload.deletedAt
+            updates['chats/' + otherUserId + '/' + currentUserId + '/' + mirroredMessageId + '/editedAt'] = null
+            updates['chats/' + otherUserId + '/' + currentUserId + '/' + mirroredMessageId + '/replyTo'] = null
+        }
+
+        await firebase.database().ref().update(updates)
+
+        return {
+            ok: true
+        }
     }
 }
 

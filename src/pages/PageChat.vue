@@ -1,5 +1,5 @@
 <template>
-  <q-page ref="pageChat" class="page-chat flex column">
+  <q-page ref="pageChat" class="page-chat app-mobile-page flex column no-wrap">
 
     <q-banner
   		v-if="!otherUserDetails.online"
@@ -25,17 +25,25 @@
       <div class="chat-empty-state__text">Envie a primeira mensagem para começar.</div>
     </div>
 
-    <div v-else :class="{ 'invisible' : !showMessages }" class="chat-messages q-pa-md column col justify-end">
+    <div v-else ref="messagesContainer" :class="{ 'invisible' : !showMessages }" class="chat-messages q-pa-md column col justify-end">
       <div
         v-for="message in messagesList"
         :key="message.messageId"
         class="chat-message-row"
-        :class="{ 'chat-message-row--sent': message.from == 'me' }"
+        :id="`chat-message-${message.messageId}`"
+        :class="{
+          'chat-message-row--sent': message.from == 'me',
+          'chat-message-row--highlighted': highlightedMessageId === message.messageId
+        }"
       >
         <div
-          v-if="message.replyTo"
+          v-if="message.replyTo && !message.deleted"
           class="chat-reply-reference"
           :class="{ 'chat-reply-reference--sent': message.from == 'me' }"
+          role="button"
+          tabindex="0"
+          @click="scrollToRepliedMessage(message.replyTo.messageId)"
+          @keyup.enter="scrollToRepliedMessage(message.replyTo.messageId)"
         >
           <div class="chat-reply-reference__author">{{ getReplyAuthorName(message.replyTo) }}</div>
           <div class="chat-reply-reference__text">{{ getMessageSnippet(message.replyTo.text) }}</div>
@@ -44,14 +52,59 @@
         <q-chat-message
           :bg-color="message.from == 'me' ? ($q.dark.isActive ? 'teal-9' : 'grey-3') : ($q.dark.isActive ? 'green-8' : 'green-3')"
           :text-color="message.from == 'me' ? ($q.dark.isActive ? 'white' : 'dark') : ($q.dark.isActive ? 'white' : 'dark')"
-          :text="[message.text]"
+          :text="[getMessageText(message)]"
           :sent="message.from == 'me'"
           :name="formatName(message)"
           class="chat-bubble"
+          :class="message.from == 'me' ? 'chat-bubble--sent' : 'chat-bubble--received'"
         />
+
+        <div
+          v-if="message.editedAt && !message.deleted"
+          class="chat-message-meta"
+          :class="{ 'chat-message-meta--sent': message.from == 'me' }"
+        >
+          editada
+        </div>
 
         <div class="chat-message-actions" :class="{ 'chat-message-actions--sent': message.from == 'me' }">
           <q-btn
+            v-if="isCompactActions && (!message.deleted || canManageMessage(message))"
+            flat
+            round
+            icon="more_horiz"
+            color="grey-7"
+            class="chat-message-actions__menu-btn"
+            aria-label="Abrir ações da mensagem"
+          >
+            <q-menu class="chat-message-menu" auto-close>
+              <q-list dense separator>
+                <q-item v-if="!message.deleted" clickable @click="prepareReply(message)">
+                  <q-item-section avatar>
+                    <q-icon name="reply" color="primary" />
+                  </q-item-section>
+                  <q-item-section>Responder</q-item-section>
+                </q-item>
+
+                <q-item v-if="canManageMessage(message)" clickable @click="prepareEdit(message)">
+                  <q-item-section avatar>
+                    <q-icon name="edit" color="grey-7" />
+                  </q-item-section>
+                  <q-item-section>Editar</q-item-section>
+                </q-item>
+
+                <q-item v-if="canManageMessage(message)" clickable @click="removeMessage(message)">
+                  <q-item-section avatar>
+                    <q-icon name="delete_outline" color="negative" />
+                  </q-item-section>
+                  <q-item-section>Apagar</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+
+          <q-btn
+            v-if="!isCompactActions && !message.deleted"
             flat
             dense
             no-caps
@@ -59,8 +112,37 @@
             color="primary"
             class="chat-message-actions__btn"
             @click="prepareReply(message)"
+            aria-label="Responder mensagem"
           >
             <span class="chat-message-actions__label">Responder</span>
+          </q-btn>
+
+          <q-btn
+            v-if="!isCompactActions && canManageMessage(message)"
+            flat
+            dense
+            no-caps
+            icon="edit"
+            color="grey-7"
+            class="chat-message-actions__btn"
+            @click="prepareEdit(message)"
+            aria-label="Editar mensagem"
+          >
+            <span class="chat-message-actions__label">Editar</span>
+          </q-btn>
+
+          <q-btn
+            v-if="!isCompactActions && canManageMessage(message)"
+            flat
+            dense
+            no-caps
+            icon="delete_outline"
+            color="negative"
+            class="chat-message-actions__btn"
+            @click="removeMessage(message)"
+            aria-label="Apagar mensagem"
+          >
+            <span class="chat-message-actions__label">Apagar</span>
           </q-btn>
         </div>
       </div>
@@ -69,6 +151,14 @@
     <q-footer elevated class="chat-footer">
       <q-toolbar class="chat-footer__toolbar">
         <q-form class="full-width" @submit.prevent="sendMessage">
+          <div v-if="editingMessage" class="chat-reply-composer" :class="{ 'chat-reply-composer--dark': $q.dark.isActive }">
+            <div class="chat-reply-composer__content">
+              <div class="chat-reply-composer__title">Editando sua mensagem</div>
+              <div class="chat-reply-composer__text">A alteração será exibida para os dois lados da conversa.</div>
+            </div>
+            <q-btn flat round dense icon="close" color="grey-7" @click="cancelEdit" />
+          </div>
+
           <div v-if="replyingToMessage" class="chat-reply-composer" :class="{ 'chat-reply-composer--dark': $q.dark.isActive }">
             <div class="chat-reply-composer__content">
               <div class="chat-reply-composer__title">Respondendo para {{ getReplyAuthorName(replyingToMessage) }}</div>
@@ -80,16 +170,17 @@
           <q-input
             :bg-color="$q.dark.isActive ? 'dark-page' : 'white'"
             outlined
-            rounded
             v-model="newMessage"
-            @blur="scrollToBottom"
             ref="newMessage"
             label="Mensagem"
             dense
             :dark="$q.dark.isActive"
+            inputmode="text"
+            enterkeyhint="send"
+            autogrow
             class="chat-footer__input">
             <template v-slot:after>
-              <q-btn round dense flat icon="send" color="primary" @click="sendMessage" />
+              <q-btn round flat icon="send" color="primary" @click="sendMessage" :disable="savingMessage || !newMessage.trim()" aria-label="Enviar mensagem" />
             </template>
           </q-input>
         </q-form>
@@ -117,11 +208,17 @@
       return {
         newMessage: '',
         showMessages: false,
-        replyingToMessage: null
+        replyingToMessage: null,
+        highlightedMessageId: '',
+        editingMessage: null,
+        savingMessage: false
       }
     },
     computed: {
       ...mapState('store', ['messages', 'userDetails', 'chatLoading']),
+      isCompactActions () {
+        return this.$q.screen.lt.sm
+      },
       messagesList () {
         return Array.isArray(this.messages) ? this.messages : []
       },
@@ -130,7 +227,7 @@
       }
     },
     methods: {
-      ...mapActions('store', ['firebaseGetMessages','firebaseStopGettingMessages','firebaseSendMessage', 'setActiveChatUser', 'markConversationAsRead']),
+      ...mapActions('store', ['firebaseGetMessages','firebaseStopGettingMessages','firebaseSendMessage', 'firebaseEditMessage', 'firebaseDeleteMessage', 'setActiveChatUser', 'markConversationAsRead']),
       async openConversation (otherUserId) {
         if (!otherUserId) {
           return
@@ -138,12 +235,18 @@
 
         this.showMessages = false
         this.cancelReply()
+        this.cancelEdit()
         this.setActiveChatUser(otherUserId)
         this.markConversationAsRead(otherUserId)
         this.firebaseStopGettingMessages()
         await this.firebaseGetMessages(otherUserId)
       },
       prepareReply (message) {
+        if (message.deleted) {
+          return
+        }
+
+        this.cancelEdit()
         this.replyingToMessage = {
           messageId: message.messageId,
           text: message.text || '',
@@ -156,6 +259,47 @@
       },
       cancelReply () {
         this.replyingToMessage = null
+      },
+      canManageMessage (message) {
+        return message.from === 'me' && !message.deleted
+      },
+      prepareEdit (message) {
+        if (!this.canManageMessage(message)) {
+          return
+        }
+
+        this.cancelReply()
+        this.editingMessage = {
+          messageId: message.messageId,
+          text: message.text || ''
+        }
+        this.newMessage = message.text || ''
+        this.$refs.newMessage.focus()
+      },
+      cancelEdit () {
+        this.editingMessage = null
+      },
+      scrollToRepliedMessage (messageId) {
+        if (!messageId) {
+          return
+        }
+
+        const target = document.getElementById(`chat-message-${messageId}`)
+
+        if (!target) {
+          return
+        }
+
+        this.highlightedMessageId = messageId
+        target.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        })
+
+        window.clearTimeout(this.highlightTimeout)
+        this.highlightTimeout = window.setTimeout(() => {
+          this.highlightedMessageId = ''
+        }, 1800)
       },
       getReplyAuthorName (replyMessage) {
         if (!replyMessage) {
@@ -178,6 +322,9 @@
         }
 
         return `${normalizedText.slice(0, 90)}...`
+      },
+      getMessageText (message) {
+        return message.deleted ? 'Esta mensagem foi apagada.' : (message.text || '')
       },
       formatName(message) {
         const nome = message.from === 'me'
@@ -223,8 +370,40 @@
 
         return `${parts[0]}, ${timeStr}`
       },
-      sendMessage () {
+      async sendMessage () {
         if (!this.newMessage.trim()) {
+          return
+        }
+
+        if (this.savingMessage) {
+          return
+        }
+
+        this.savingMessage = true
+
+        if (this.editingMessage) {
+          const result = await this.firebaseEditMessage({
+            otherUserId: this.$route.params.otherUserId,
+            messageId: this.editingMessage.messageId,
+            text: this.newMessage.trim()
+          })
+
+          this.savingMessage = false
+
+          if (!result || !result.ok) {
+            this.$q.notify({
+              type: 'negative',
+              message: result && result.error ? result.error : 'Não foi possível editar a mensagem.'
+            })
+            return
+          }
+
+          this.$q.notify({
+            type: 'positive',
+            message: 'Mensagem editada.'
+          })
+
+          this.clearMessage()
           return
         }
 
@@ -234,7 +413,7 @@
           timeZone: 'America/Sao_Paulo'
         })
 
-        this.firebaseSendMessage({
+        const result = await this.firebaseSendMessage({
           message: {
             text: this.newMessage.trim(),
             from: 'me',
@@ -247,18 +426,84 @@
           otherUserId: this.$route.params.otherUserId
         })
 
+        this.savingMessage = false
+
+        if (!result || !result.ok) {
+          this.$q.notify({
+            type: 'negative',
+            message: result && result.error ? result.error : 'Não foi possível enviar a mensagem.'
+          })
+          return
+        }
+
         this.clearMessage()
+      },
+      async removeMessage (message) {
+        if (!this.canManageMessage(message)) {
+          return
+        }
+
+        try {
+          await this.$q.dialog({
+            title: 'Apagar mensagem',
+            message: 'Deseja apagar esta mensagem para todos na conversa?',
+            cancel: {
+              flat: true,
+              label: 'Cancelar'
+            },
+            ok: {
+              color: 'negative',
+              label: 'Apagar'
+            },
+            persistent: true
+          })
+        } catch (error) {
+          return
+        }
+
+        const result = await this.firebaseDeleteMessage({
+          otherUserId: this.$route.params.otherUserId,
+          messageId: message.messageId
+        })
+
+        if (!result || !result.ok) {
+          this.$q.notify({
+            type: 'negative',
+            message: result && result.error ? result.error : 'Não foi possível apagar a mensagem.'
+          })
+          return
+        }
+
+        if (this.editingMessage && this.editingMessage.messageId === message.messageId) {
+          this.clearMessage()
+        }
+
+        this.$q.notify({
+          type: 'positive',
+          message: 'Mensagem apagada.'
+        })
       },
       clearMessage () {
         this.newMessage = ''
         this.cancelReply()
-        this.$refs.newMessage.focus()
+        this.cancelEdit()
+        this.$nextTick(() => {
+          this.$refs.newMessage.focus()
+        })
       },
       scrollToBottom () {
-        let pageChat = this.$refs.pageChat.$el
+        const messagesContainer = this.$refs.messagesContainer
+
+        if (!messagesContainer) {
+          return
+        }
+
         setTimeout(() => {
-          window.scrollTo(0, pageChat.scrollHeight)
-        }, 20);
+          messagesContainer.scrollTo({
+            top: messagesContainer.scrollHeight,
+            behavior: 'smooth'
+          })
+        }, 20)
       }
     },
     watch: {
@@ -284,8 +529,9 @@
     mounted () {
       this.openConversation(this.$route.params.otherUserId)
     },
-	  beforeUnmount() {
+    beforeUnmount() {
       // Limpando a caixa de mensagem, para as conversas de janelas fechadas não serem exibidas na nova janela
+      window.clearTimeout(this.highlightTimeout)
 	  	this.firebaseStopGettingMessages()
 			this.setActiveChatUser('')
 	  }
@@ -295,7 +541,6 @@
 
 <style lang="stylus">
 .page-chat
-  min-height calc(100vh - 88px)
   background linear-gradient(180deg, rgba(239, 245, 241, 1) 0%, rgba(227, 234, 230, 1) 100%)
 
   &:after
@@ -326,7 +571,7 @@
   margin 12px auto 0
   width fit-content
   padding 8px 14px
-  border-radius 999px
+  border-radius 8px
   box-shadow 0 10px 24px rgba(0, 0, 0, 0.08)
 
 .chat-status-banner--online
@@ -348,6 +593,9 @@
 .chat-messages
   position relative
   z-index 1
+  overflow-y auto
+  overscroll-behavior contain
+  padding-bottom calc(12px + env(safe-area-inset-bottom))
 
 .chat-loading-state
   position relative
@@ -388,16 +636,62 @@
 .chat-bubble
   margin-bottom 10px
 
+.chat-bubble--sent
+  align-self flex-end
+
+.chat-bubble--received
+  align-self flex-start
+
+.chat-bubble :deep(.q-message-container)
+  max-width min(78vw, 520px)
+
+.chat-bubble :deep(.q-message-name)
+  margin-bottom 6px
+  font-size 0.74rem
+  letter-spacing 0.01em
+  opacity 0.78
+
+.chat-bubble--sent :deep(.q-message-text)
+  background linear-gradient(180deg, rgba(235, 235, 235, 0.96) 0%, rgba(223, 223, 223, 0.96) 100%)
+  border-radius 10px 10px 4px 10px
+  box-shadow 0 10px 22px rgba(21, 33, 31, 0.08)
+
+.chat-bubble--received :deep(.q-message-text)
+  background linear-gradient(180deg, rgba(208, 244, 198, 0.96) 0%, rgba(188, 235, 173, 0.96) 100%)
+  border-radius 10px 10px 10px 4px
+  box-shadow 0 10px 22px rgba(11, 74, 44, 0.08)
+
+.chat-bubble :deep(.q-message-text-content)
+  font-size 0.95rem
+  line-height 1.5
+
+.body--dark .chat-bubble--sent :deep(.q-message-text)
+  background linear-gradient(180deg, rgba(30, 43, 46, 0.96) 0%, rgba(21, 31, 34, 0.98) 100%)
+
+.body--dark .chat-bubble--received :deep(.q-message-text)
+  background linear-gradient(180deg, rgba(18, 92, 79, 0.96) 0%, rgba(12, 75, 64, 0.98) 100%)
+
 .chat-message-row
   display flex
   flex-direction column
+  align-items flex-start
   margin-bottom 10px
+  transition transform 0.18s ease, filter 0.18s ease
 
 .chat-message-row--sent
   align-items flex-end
 
+.chat-message-row--highlighted
+  filter saturate(1.15)
+  transform scale(1.01)
+
+.chat-message-row--highlighted .chat-reply-reference,
+.chat-message-row--highlighted .chat-bubble :deep(.q-message-text)
+  box-shadow 0 0 0 2px rgba(38, 166, 154, 0.28), 0 14px 30px rgba(10, 54, 49, 0.14)
+
 .chat-message-actions
   display flex
+  flex-wrap wrap
   justify-content flex-start
   margin-top -2px
   padding-left 8px
@@ -411,18 +705,48 @@
   min-height auto
   padding 2px 6px
 
+.chat-message-actions__menu-btn
+  min-width 40px
+  min-height 40px
+
+.chat-message-menu
+  border-radius 10px
+
 .chat-message-actions__label
   margin-left 4px
   font-size 0.78rem
 
+.chat-message-meta
+  margin-top -2px
+  padding-left 12px
+  font-size 0.72rem
+  color #70817d
+
+.chat-message-meta--sent
+  padding-right 12px
+  padding-left 0
+  text-align right
+
+.body--dark .chat-message-meta
+  color #98aaa6
+
 .chat-reply-reference
-  max-width 78%
+  width fit-content
+  max-width 52%
   margin-bottom 6px
   padding 10px 12px
   border-left 4px solid rgba(7, 94, 84, 0.72)
-  border-radius 14px
+  border-radius 8px
   background rgba(255, 255, 255, 0.46)
   box-shadow 0 8px 20px rgba(10, 54, 49, 0.06)
+  cursor pointer
+  transition transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease
+
+  &:hover,
+  &:focus
+    transform translateY(-1px)
+    box-shadow 0 12px 24px rgba(10, 54, 49, 0.12)
+    outline none
 
 .chat-reply-reference--sent
   border-left-color rgba(129, 199, 132, 0.9)
@@ -458,7 +782,7 @@
   gap 10px
   margin-bottom 10px
   padding 10px 12px
-  border-radius 18px
+  border-radius 8px
   background rgba(255, 255, 255, 0.86)
   border-left 4px solid rgba(7, 94, 84, 0.78)
   box-shadow 0 10px 24px rgba(10, 54, 49, 0.08)
@@ -488,5 +812,33 @@
 
 .chat-footer__input
   box-shadow 0 10px 22px rgba(10, 54, 49, 0.08)
+
+.chat-footer__input :deep(textarea),
+.chat-footer__input :deep(input)
+  max-height 140px
+
+@media (max-width: 900px)
+  .chat-reply-reference
+    max-width 68%
+
+@media (max-width: 600px)
+  .chat-messages
+    padding 12px 10px
+
+  .chat-message-actions
+    padding-left 4px
+
+  .chat-message-actions--sent
+    padding-right 4px
+
+  .chat-reply-reference
+    max-width 86%
+    padding 8px 10px
+
+  .chat-reply-composer
+    padding 8px 10px
+
+  .chat-footer__toolbar
+    padding 8px 8px calc(8px + env(safe-area-inset-bottom))
 
 </style>

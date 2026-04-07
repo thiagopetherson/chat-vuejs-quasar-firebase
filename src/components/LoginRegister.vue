@@ -5,9 +5,10 @@
                     type="text"
                     class="q-mb-md"
                     outlined
-                    rounded
                     v-model="formData.name"
                     label="Nome"
+                    autocomplete="name"
+                    autocapitalize="words"
                     :dark="$q.dark.isActive"
                     :bg-color="$q.dark.isActive ? 'dark-page' : 'white'"
                 />
@@ -15,9 +16,13 @@
                     type="email"
                     class="q-mb-md"
                     outlined
-                    rounded
                     v-model="formData.email"
                     label="Email"
+                    autocomplete="email"
+                    autocapitalize="off"
+                    autocorrect="off"
+                    spellcheck="false"
+                    inputmode="email"
                     :dark="$q.dark.isActive"
                     :bg-color="$q.dark.isActive ? 'dark-page' : 'white'"
                 />
@@ -25,9 +30,9 @@
                     type="password"
                     class="q-mb-md"
                     outlined
-                    rounded
                     v-model="formData.password"
                     label="Senha"
+                    :autocomplete="tab == 'login' ? 'current-password' : 'new-password'"
                     :dark="$q.dark.isActive"
                     :bg-color="$q.dark.isActive ? 'dark-page' : 'white'"
                     @keyup.enter="submitForm"
@@ -45,6 +50,8 @@
                                 no-caps
                                 unelevated
                                 class="auth-form__submit full-width"
+                                :loading="submitting"
+                                :disable="submitting"
                                 :label="tab == 'login' ? 'Entrar' : 'Criar conta'"
                                 type="submit"
                             />
@@ -57,31 +64,67 @@
 import { mapActions } from 'vuex'
 
 export default {
-name: 'LoginRegister',
-props: ['tab'],
-data () {
+    name: 'LoginRegister',
+    props: ['tab'],
+    data () {
     return {
-    formData: {
+            submitting: false,
+            formData: {
         name: '',
         email: '',
         password: ''
+            }
     }
-    }
-},
-methods: {
+    },
+    methods: {
     ...mapActions('store', ['registerUser', 'loginUser']),
-    submitForm () {
-        if (!this.formData.email || !this.formData.password || (this.tab == 'register' && !this.formData.name)) {
-            return
-        }
+    async submitForm () {
+            if (!this.formData.email || !this.formData.password || (this.tab == 'register' && !this.formData.name)) {
+                this.$q.notify({
+                    type: 'warning',
+                    message: 'Preencha os campos obrigatórios antes de continuar.'
+                })
+                return
+            }
 
-        if (this.tab == 'login') {
-            this.loginUser(this.formData)
-        } else if (this.tab == 'register') {
-            this.registerUser(this.formData)
-        }
+            this.submitting = true
+
+            const payload = {
+                name: this.formData.name,
+                email: this.formData.email,
+                password: this.formData.password
+            }
+
+            let result
+
+            if (this.tab == 'login') {
+                result = await this.loginUser(payload)
+            } else if (this.tab == 'register') {
+                result = await this.registerUser(payload)
+            }
+
+            this.submitting = false
+
+            if (!result || !result.ok) {
+                this.$q.notify({
+                    type: 'negative',
+                    message: result && result.error ? result.error : 'Não foi possível concluir a operação.'
+                })
+                return
+            }
+
+            if (this.tab == 'register') {
+                this.$q.notify({
+                    type: 'positive',
+                    message: 'Conta criada com sucesso. Você já pode conversar.'
+                })
+                this.formData.name = ''
+            }
+
+            this.formData.email = ''
+            this.formData.password = ''
     }
-}
+    }
 }
 
 </script>
@@ -99,8 +142,9 @@ methods: {
     color #9eb1ac
 
 .auth-form__submit
-    min-width 154px
-    border-radius 999px
+    min-width 168px
+    min-height 46px
+    border-radius 8px
     padding 10px 18px
     font-weight 700
 </style>

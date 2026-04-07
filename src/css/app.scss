@@ -5,6 +5,13 @@
 	--app-surface-dark: rgba(17, 22, 26, 0.82);
 	--app-text-soft: #667571;
 	--app-text-soft-dark: #99a8a4;
+	--app-view-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+	:root {
+		--app-view-height: 100dvh;
+	}
 }
 
 body {
@@ -17,6 +24,10 @@ body.body--dark {
 
 .q-page {
 	position: relative;
+}
+
+.app-mobile-page {
+	min-height: calc(var(--app-view-height) - 88px);
 }
 
 .q-field__native,

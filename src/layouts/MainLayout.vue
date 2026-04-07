@@ -8,9 +8,9 @@
             @click="$router.go(-1)"
             icon="arrow_back"
             flat
-            dense
             round
             class="header-icon-btn"
+            aria-label="Voltar"
           />
         </div>
 
@@ -21,23 +21,23 @@
 
         <div class="header-side header-side--right">
           <q-btn
-            v-if="notificationsSupported"
+            v-if="userDetails.userId && notificationsSupported"
             @click="enableNotifications"
             :icon="notificationsIcon"
             flat
-            dense
             round
             class="header-icon-btn q-mr-xs"
             :title="notificationsTitle"
+            aria-label="Ativar notificações"
           />
 
           <q-btn
             @click="toggleDarkMode"
             :icon="isDarkMode ? 'light_mode' : 'dark_mode'"
             flat
-            dense
             round
             class="header-icon-btn q-mr-xs"
+            :aria-label="isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'"
           />
 
           <q-btn
@@ -46,7 +46,6 @@
             icon="account_circle"
             no-caps
             flat
-            dense
             class="header-action-btn"
             label="Login"
           />
@@ -57,7 +56,6 @@
             icon="logout"
             no-caps
             flat
-            dense
             class="header-action-btn"
           >
             <span class="header-user-text">{{ userDetails.name }}</span>
@@ -123,18 +121,18 @@ export default {
       let currentPath = this.$route.fullPath // Pegando a rota atual
       // verificando qual é a rota e retornando o título da página
       if (currentPath == '/') {
-        return 'SmackChat'
+        return 'SmartChat'
       } else if (currentPath.includes('/chat')) {
         return this.otherUserDetails.name || 'Conversa'
       } else if (currentPath == '/auth') {
          return 'Login'
       }
 
-      return 'SmackChat'
+      return 'SmartChat'
     }
   },
   created () {
-    const savedDarkMode = localStorage.getItem('smackchat-dark-mode')
+    const savedDarkMode = localStorage.getItem('smartchat-dark-mode')
 
     if (savedDarkMode !== null) {
       this.$q.dark.set(savedDarkMode === 'true')
@@ -155,7 +153,7 @@ export default {
       toggleDarkMode () {
         const nextMode = !this.$q.dark.isActive
         this.$q.dark.set(nextMode)
-        localStorage.setItem('smackchat-dark-mode', String(nextMode))
+        localStorage.setItem('smartchat-dark-mode', String(nextMode))
       }
   }
 }
@@ -163,73 +161,93 @@ export default {
 
 <style lang="stylus">
 .app-shell
-	background linear-gradient(180deg, rgba(7, 94, 84, 0.08) 0%, rgba(222, 248, 238, 0.88) 35%, rgba(247, 250, 248, 1) 100%)
+  background linear-gradient(180deg, rgba(7, 94, 84, 0.08) 0%, rgba(222, 248, 238, 0.88) 35%, rgba(247, 250, 248, 1) 100%)
 
 .body--dark .app-shell
-	background linear-gradient(180deg, rgba(6, 32, 29, 1) 0%, rgba(10, 24, 23, 1) 45%, rgba(15, 17, 21, 1) 100%)
+  background linear-gradient(180deg, rgba(6, 32, 29, 1) 0%, rgba(10, 24, 23, 1) 45%, rgba(15, 17, 21, 1) 100%)
 
 .app-header
-	backdrop-filter blur(16px)
-	background rgba(255, 255, 255, 0.82)
-	border-bottom 1px solid rgba(7, 94, 84, 0.12)
-	color #16302d
+  backdrop-filter blur(16px)
+  background rgba(255, 255, 255, 0.82)
+  border-bottom 1px solid rgba(7, 94, 84, 0.12)
+  color #16302d
 
 .body--dark .app-header
-	background rgba(11, 18, 19, 0.84)
-	border-bottom 1px solid rgba(116, 214, 197, 0.12)
-	color #f5fbf9
+  background rgba(11, 18, 19, 0.84)
+  border-bottom 1px solid rgba(116, 214, 197, 0.12)
+  color #f5fbf9
 
-  .platform-ios
-    .q-header
-      .q-btn, .q-toolbar__title
-        padding-top constant(safe-area-inset-top)
-        padding-top env(safe-area-inset-top)
+.platform-ios
+  .q-header
+    .q-btn, .q-toolbar__title
+      padding-top constant(safe-area-inset-top)
+      padding-top env(safe-area-inset-top)
 
 .app-toolbar
-	min-height 72px
-	padding 10px 16px
+  min-height 72px
+  padding 10px 16px
 
 .header-side
-	display flex
-	align-items center
-	min-width 88px
+  display flex
+  align-items center
+  min-width 88px
 
 .header-side--right
-	justify-content flex-end
+  justify-content flex-end
 
 .app-toolbar__title
-	text-align center
-	padding 0 12px
+  text-align center
+  padding 0 12px
 
 .app-toolbar__eyebrow
-	font-size 0.7rem
-	letter-spacing 0.18em
-	text-transform uppercase
-	opacity 0.7
+  font-size 0.7rem
+  letter-spacing 0.18em
+  text-transform uppercase
+  opacity 0.7
 
 .app-toolbar__headline
-	font-size 1.15rem
-	font-weight 700
-	line-height 1.2
+  font-size 1.15rem
+  font-weight 700
+  line-height 1.2
 
 .header-icon-btn,
 .header-action-btn
-	border-radius 14px
-	line-height 1.2
+  border-radius 8px
+  line-height 1.2
+
+.header-icon-btn
+  min-width 44px
+  min-height 44px
 
 .header-action-btn
-	padding 6px 10px
-	background rgba(7, 94, 84, 0.08)
+  min-height 44px
+
+.header-action-btn
+  padding 8px 12px
+  background rgba(7, 94, 84, 0.08)
 
 .body--dark .header-action-btn
-	background rgba(255, 255, 255, 0.08)
+  background rgba(255, 255, 255, 0.08)
 
 .header-user-text
-	max-width 110px
-	overflow hidden
-	text-overflow ellipsis
-	white-space nowrap
+  max-width 110px
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
 
 .app-page-container
-	padding-top 6px
+  padding-top 6px
+
+@media (max-width: 600px)
+  .app-toolbar
+    padding 8px 10px
+
+  .header-side
+    min-width 56px
+
+  .app-toolbar__title
+    padding 0 8px
+
+  .app-toolbar__headline
+    font-size 1rem
 </style>

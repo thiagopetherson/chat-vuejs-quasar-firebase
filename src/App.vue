@@ -26,7 +26,7 @@ export default {
      }
    },
    updateDocumentTitle () {
-     const defaultTitle = 'SmackChat'
+     const defaultTitle = 'SmartChat'
      document.title = this.unreadTotal > 0 ? `(${this.unreadTotal}) ${defaultTitle}` : defaultTitle
    },
    showStartupInboxAlert (payload) {
