@@ -10,6 +10,7 @@ let connectionRef
 let currentUserRef
 let currentUserConnectionsRef
 let currentSessionConnectionRef
+let seenMessagesRef
 let messagesRequestToken = 0
 const knownConversationLastKeys = {}
 const deletedMessageText = 'Esta mensagem foi apagada.'
@@ -149,6 +150,7 @@ const state = {
     userDetails: {},
     users: [], // Esse estado guardada a lista de usuários
     messages: [], // Esse estado guarda as mensagens
+    seenMessages: {},
     unreadMessages: {},
     activeChatUserId: '',
     chatLoading: false,
@@ -215,6 +217,34 @@ const mutations = {
     },
     clearMessages (state) {
         state.messages = []
+    },
+    setSeenMessages (state, payload) {
+        state.seenMessages = payload || {}
+    },
+    setSeenMessage (state, payload) {
+        if (!payload.otherUserId || !payload.messageId) {
+            return
+        }
+
+        state.seenMessages = {
+            ...state.seenMessages,
+            [payload.otherUserId]: payload.messageId
+        }
+    },
+    clearSeenMessage (state, payload) {
+        if (!payload.otherUserId || !(payload.otherUserId in state.seenMessages)) {
+            return
+        }
+
+        const seenMessages = {
+            ...state.seenMessages
+        }
+
+        delete seenMessages[payload.otherUserId]
+        state.seenMessages = seenMessages
+    },
+    clearSeenMessages (state) {
+        state.seenMessages = {}
     },
     setChatLoading (state, payload) {
         state.chatLoading = payload
@@ -333,8 +363,10 @@ const actions = {
         // Deslogar o usuário
         dispatch('firebaseStopGettingMessages')
         dispatch('firebaseStopMessageNotifications')
+        dispatch('firebaseUnbindSeenMessages')
         await dispatch('firebaseUnbindPresence')
         commit('clearUsers')
+        commit('clearSeenMessages')
         commit('clearUnreadMessages')
         commit('setActiveChatUserId', '')
 		await firebase.auth().signOut()
@@ -357,6 +389,7 @@ const actions = {
             	userId: userId
             })
             commit('setNotificationPermission', getDefaultNotificationPermission())
+            await dispatch('firebaseBindSeenMessages', userId)
             dispatch('firebaseBindPresence', userId)
             // Action que pega todos os usuários
             dispatch('firebaseGetUsers')
@@ -367,9 +400,11 @@ const actions = {
 		  }
 		  else {
             dispatch('firebaseStopMessageNotifications')
+            dispatch('firebaseUnbindSeenMessages')
             dispatch('firebaseUnbindPresence')
             dispatch('firebaseStopGettingMessages')
             commit('clearUsers')
+            commit('clearSeenMessages')
             commit('clearUnreadMessages')
             commit('setActiveChatUserId', '')
             // Setando o usuário como objeto vazio
@@ -397,13 +432,23 @@ const actions = {
         return permission
     },
 
-    setAppVisibility({ commit, state }, payload) {
+    setAppVisibility({ commit, state, dispatch }, payload) {
         commit('setAppVisible', payload)
 
         if (payload && state.activeChatUserId) {
             commit('clearUnreadMessage', {
                 otherUserId: state.activeChatUserId
             })
+
+            const messageId = knownConversationLastKeys[state.activeChatUserId]
+
+            if (messageId) {
+                dispatch('persistSeenMessage', {
+                    userId: state.userDetails.userId,
+                    otherUserId: state.activeChatUserId,
+                    messageId
+                })
+            }
         }
     },
 
@@ -411,7 +456,7 @@ const actions = {
         commit('setActiveChatUserId', payload || '')
     },
 
-    persistSeenMessage({}, payload) {
+    async persistSeenMessage({ commit }, payload) {
         if (!payload.userId || !payload.otherUserId || !payload.messageId) {
             return
         }
@@ -419,6 +464,13 @@ const actions = {
         const seenMessages = getSeenMessages(payload.userId)
         seenMessages[payload.otherUserId] = payload.messageId
         saveSeenMessages(payload.userId, seenMessages)
+
+        commit('setSeenMessage', {
+            otherUserId: payload.otherUserId,
+            messageId: payload.messageId
+        })
+
+        await firebase.database().ref('users/' + payload.userId + '/seenMessages/' + payload.otherUserId).set(payload.messageId)
     },
 
     markConversationAsRead({ commit, state, dispatch }, otherUserId) {
@@ -435,6 +487,119 @@ const actions = {
                 messageId
             })
         }
+    },
+
+    async firebaseBindSeenMessages({ commit, dispatch }, userId) {
+        if (!userId) {
+            return
+        }
+
+        if (seenMessagesRef) {
+            seenMessagesRef.off('child_added')
+            seenMessagesRef.off('child_changed')
+            seenMessagesRef.off('child_removed')
+        }
+
+        const cachedSeenMessages = getSeenMessages(userId)
+        seenMessagesRef = firebase.database().ref('users/' + userId + '/seenMessages')
+
+        const snapshot = await seenMessagesRef.once('value')
+        const remoteSeenMessages = snapshot.val() || {}
+        const initialSeenMessages = {
+            ...cachedSeenMessages,
+            ...remoteSeenMessages
+        }
+
+        commit('setSeenMessages', initialSeenMessages)
+        saveSeenMessages(userId, initialSeenMessages)
+
+        const applySeenMessageUpdate = snapshotSeenMessage => {
+            const otherUserId = snapshotSeenMessage.key
+            const messageId = snapshotSeenMessage.val()
+
+            if (!otherUserId || !messageId) {
+                return
+            }
+
+            commit('setSeenMessage', {
+                otherUserId,
+                messageId
+            })
+
+            const nextSeenMessages = getSeenMessages(userId)
+            nextSeenMessages[otherUserId] = messageId
+            saveSeenMessages(userId, nextSeenMessages)
+
+            dispatch('refreshUnreadCountForConversation', {
+                userId,
+                otherUserId
+            })
+        }
+
+        const handleSeenMessageRemoval = snapshotSeenMessage => {
+            const otherUserId = snapshotSeenMessage.key
+
+            if (!otherUserId) {
+                return
+            }
+
+            commit('clearSeenMessage', {
+                otherUserId
+            })
+
+            const nextSeenMessages = getSeenMessages(userId)
+            delete nextSeenMessages[otherUserId]
+            saveSeenMessages(userId, nextSeenMessages)
+
+            dispatch('refreshUnreadCountForConversation', {
+                userId,
+                otherUserId
+            })
+        }
+
+        seenMessagesRef.on('child_added', applySeenMessageUpdate)
+        seenMessagesRef.on('child_changed', applySeenMessageUpdate)
+        seenMessagesRef.on('child_removed', handleSeenMessageRemoval)
+    },
+
+    firebaseUnbindSeenMessages() {
+        if (seenMessagesRef) {
+            seenMessagesRef.off('child_added')
+            seenMessagesRef.off('child_changed')
+            seenMessagesRef.off('child_removed')
+            seenMessagesRef = null
+        }
+    },
+
+    async refreshUnreadCountForConversation({ state, commit }, payload) {
+        const userId = payload.userId || state.userDetails.userId
+        const otherUserId = payload.otherUserId
+
+        if (!userId || !otherUserId) {
+            return
+        }
+
+        const conversationDetails = payload.conversationDetails || (await firebase.database().ref('chats/' + userId + '/' + otherUserId).once('value')).val() || {}
+        const lastMessage = getLastMessageFromConversation(conversationDetails)
+
+        if (!lastMessage) {
+            commit('setUnreadMessageCount', {
+                otherUserId,
+                count: 0
+            })
+            return
+        }
+
+        const seenMessageId = state.seenMessages[otherUserId]
+        const isConversationOpen = state.activeChatUserId === otherUserId && state.appVisible
+        const unreadCount = isConversationOpen
+            ? 0
+            : countUnreadIncomingMessages(conversationDetails, seenMessageId)
+
+        commit('setUnreadMessageCount', {
+            otherUserId,
+            count: unreadCount
+        })
     },
 
     firebaseBindPresence({}, userId) {
@@ -552,11 +717,8 @@ const actions = {
 
         commit('clearUnreadMessages')
 
-        const seenMessages = getSeenMessages(userId)
-        const nextSeenMessages = {
-            ...seenMessages
-        }
-        let shouldPersistSeenMessages = false
+        const seenMessages = state.seenMessages || {}
+        const missingSeenMessages = []
         conversationsRef = firebase.database().ref('chats/' + userId)
         const snapshot = await conversationsRef.once('value')
 
@@ -576,8 +738,10 @@ const actions = {
             const seenMessageId = seenMessages[otherUserId]
 
             if (!seenMessageId) {
-                nextSeenMessages[otherUserId] = lastMessage.messageId
-                shouldPersistSeenMessages = true
+                missingSeenMessages.push({
+                    otherUserId,
+                    messageId: lastMessage.messageId
+                })
                 return
             }
 
@@ -591,8 +755,14 @@ const actions = {
             }
         })
 
-        if (shouldPersistSeenMessages) {
-            saveSeenMessages(userId, nextSeenMessages)
+        if (missingSeenMessages.length) {
+            await Promise.all(missingSeenMessages.map(item => {
+                return dispatch('persistSeenMessage', {
+                    userId,
+                    otherUserId: item.otherUserId,
+                    messageId: item.messageId
+                })
+            }))
         }
 
         const handleConversationChange = snapshotChanged => {
@@ -609,16 +779,10 @@ const actions = {
                 return
             }
 
-            const seenMessages = getSeenMessages(userId)
-            const seenMessageId = seenMessages[otherUserId]
-            const isConversationOpen = state.activeChatUserId === otherUserId && state.appVisible
-            const unreadCount = isConversationOpen
-                ? 0
-                : countUnreadIncomingMessages(conversationDetails, seenMessageId)
-
-            commit('setUnreadMessageCount', {
+            dispatch('refreshUnreadCountForConversation', {
+                userId,
                 otherUserId,
-                count: unreadCount
+                conversationDetails
             })
 
             const previousLastKey = knownConversationLastKeys[otherUserId]
