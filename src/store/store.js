@@ -7,7 +7,9 @@ let messagesListenerRef
 let messagesChangesRef
 let conversationsRef
 let connectionRef
-let currentUserPresenceRef
+let currentUserRef
+let currentUserConnectionsRef
+let currentSessionConnectionRef
 let messagesRequestToken = 0
 const knownConversationLastKeys = {}
 const deletedMessageText = 'Esta mensagem foi apagada.'
@@ -20,6 +22,22 @@ const getDefaultNotificationPermission = () => {
     }
 
     return Notification.permission
+}
+
+const getActiveConnectionsCount = (connections = {}) => {
+    if (!connections || typeof connections !== 'object') {
+        return 0
+    }
+
+    return Object.keys(connections).length
+}
+
+const normalizeUserDetails = (userId, userDetails = {}) => {
+    return {
+        userId,
+        ...userDetails,
+        online: getActiveConnectionsCount(userDetails.connections) > 0
+    }
 }
 
 const getLastMessageFromConversation = (conversationDetails = {}) => {
@@ -152,27 +170,20 @@ const mutations = {
             return
         }
 
-        state.users.push({
-            userId: payload.userId,
-            ...payload.userDetails
-        })
+        state.users.push(normalizeUserDetails(payload.userId, payload.userDetails))
 	},
 	updateUser(state, payload) {
 		const userIndex = state.users.findIndex(item => item.userId === payload.userId)
 
 		if (userIndex === -1) {
-			state.users.push({
-				userId: payload.userId,
-				...payload.userDetails
-			})
+            state.users.push(normalizeUserDetails(payload.userId, payload.userDetails))
 			return
 		}
 
-		state.users[userIndex] = {
-			...state.users[userIndex],
-			userId: payload.userId,
-			...payload.userDetails
-		}
+        state.users[userIndex] = {
+            ...state.users[userIndex],
+            ...normalizeUserDetails(payload.userId, payload.userDetails)
+        }
 	},
     addMessage (state, payload) {
         const existingMessage = state.messages.some(message => message.messageId === payload.messageId)
@@ -277,7 +288,7 @@ const actions = {
             await firebase.database().ref('users/' + createdUser.uid).set({
                 name,
                 email,
-                online: true
+                lastSeen: firebase.database.ServerValue.TIMESTAMP
             })
 
             return {
@@ -318,17 +329,17 @@ const actions = {
             }
         }
     },
-    logoutUser({ commit, dispatch }) {
+    async logoutUser({ commit, dispatch }) {
         // Deslogar o usuário
         dispatch('firebaseStopGettingMessages')
         dispatch('firebaseStopMessageNotifications')
-        dispatch('firebaseUnbindPresence')
+        await dispatch('firebaseUnbindPresence')
         commit('clearUsers')
         commit('clearUnreadMessages')
         commit('setActiveChatUserId', '')
-		firebase.auth().signOut()
+		await firebase.auth().signOut()
 	},
-	handleAuthStateChanged({ commit, dispatch, state }) {
+    handleAuthStateChanged({ commit, dispatch }) {
 
         // Método que musa o status do usuário
         firebase.auth().onAuthStateChanged(async user => {
@@ -361,14 +372,6 @@ const actions = {
             commit('clearUsers')
             commit('clearUnreadMessages')
             commit('setActiveChatUserId', '')
-		  	// O usuário está deslogado
-            // Vamos atualizar (no firebase) os dados do usuário quando ele logar (colocar offline, por exemplo)
-            dispatch('firebaseUpdateUser', {
-                userId: state.userDetails.userId,
-                updates: {
-                    online: false
-                }
-            })
             // Setando o usuário como objeto vazio
             commit('setUserDetails', {})
             // Redirecionando o usuário para a página (se logado)
@@ -444,30 +447,54 @@ const actions = {
         }
 
         connectionRef = firebase.database().ref('.info/connected')
-        currentUserPresenceRef = firebase.database().ref('users/' + userId)
+        currentUserRef = firebase.database().ref('users/' + userId)
+        currentUserConnectionsRef = currentUserRef.child('connections')
 
         connectionRef.on('value', snapshot => {
             if (snapshot.val() === false) {
                 return
             }
 
-            currentUserPresenceRef.onDisconnect().update({
-                online: false
-            })
+            if (currentSessionConnectionRef) {
+                currentSessionConnectionRef.onDisconnect().cancel().catch(() => {})
+                currentSessionConnectionRef.remove().catch(() => {})
+            }
 
-            currentUserPresenceRef.update({
-                online: true
+            currentSessionConnectionRef = currentUserConnectionsRef.push()
+
+            currentSessionConnectionRef.onDisconnect().remove()
+            currentUserRef.child('lastSeen').onDisconnect().set(firebase.database.ServerValue.TIMESTAMP)
+
+            currentSessionConnectionRef.set({
+                connectedAt: firebase.database.ServerValue.TIMESTAMP
             })
         })
     },
 
-    firebaseUnbindPresence() {
+    async firebaseUnbindPresence() {
         if (connectionRef) {
             connectionRef.off('value')
             connectionRef = null
         }
 
-        currentUserPresenceRef = null
+        const pendingUpdates = []
+
+        if (currentUserRef) {
+            pendingUpdates.push(
+                currentUserRef.child('lastSeen').set(firebase.database.ServerValue.TIMESTAMP).catch(() => {})
+            )
+        }
+
+        if (currentSessionConnectionRef) {
+            pendingUpdates.push(currentSessionConnectionRef.onDisconnect().cancel().catch(() => {}))
+            pendingUpdates.push(currentSessionConnectionRef.remove().catch(() => {}))
+            currentSessionConnectionRef = null
+        }
+
+        currentUserConnectionsRef = null
+        currentUserRef = null
+
+        await Promise.all(pendingUpdates)
     },
 
     // Criando a action que vai alterar o firebase

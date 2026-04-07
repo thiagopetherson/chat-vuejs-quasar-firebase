@@ -1,18 +1,6 @@
 <template>
   <q-page ref="pageChat" class="page-chat flex column no-wrap">
 
-    <q-banner
-  		v-if="!otherUserDetails.online"
-		class="chat-status-banner chat-status-banner--offline text-center fixed-top">
-      {{ otherUserDetails.name }} está offline.
-    </q-banner>
-
-    <q-banner
-  	  v-else
-		class="chat-status-banner chat-status-banner--online text-center">
-      {{ otherUserDetails.name }} está online.
-    </q-banner>
-
     <div v-if="chatLoading" class="chat-loading-state column items-center justify-center col q-px-lg">
       <q-spinner-dots color="primary" size="56px" />
       <div class="chat-loading-state__title">Carregando histórico...</div>
@@ -648,38 +636,9 @@
 .body--dark .page-chat
   background linear-gradient(180deg, rgba(14, 21, 24, 1) 0%, rgba(10, 14, 17, 1) 100%)
 
-.page-chat .q-banner
-  top 78px
-  z-index 2
-  opacity 0.95
-
 .page-chat .q-message
   z-index 1
   margin-bottom 0
-
-.chat-status-banner
-  margin 12px auto 0
-  width fit-content
-  max-width calc(100% - 24px)
-  padding 8px 14px
-  border-radius 8px
-  box-shadow 0 10px 24px rgba(0, 0, 0, 0.08)
-
-.chat-status-banner--online
-  background rgba(129, 199, 132, 0.2)
-  color #1a5d1e
-
-.chat-status-banner--offline
-  background rgba(255, 214, 102, 0.32)
-  color #7d5b00
-
-.body--dark .chat-status-banner--online
-  background rgba(46, 125, 50, 0.38)
-  color #d9f4dd
-
-.body--dark .chat-status-banner--offline
-  background rgba(255, 193, 7, 0.28)
-  color #fff1bf
 
 .chat-messages
   position relative
