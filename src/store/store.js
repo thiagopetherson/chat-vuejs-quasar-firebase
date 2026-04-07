@@ -135,8 +135,7 @@ const state = {
     activeChatUserId: '',
     chatLoading: false,
     appVisible: true,
-    notificationPermission: getDefaultNotificationPermission(),
-    startupInboxAlert: null
+    notificationPermission: getDefaultNotificationPermission()
 }
 
 const mutations = {
@@ -253,12 +252,6 @@ const mutations = {
     },
     setNotificationPermission (state, payload) {
         state.notificationPermission = payload
-    },
-    setStartupInboxAlert (state, payload) {
-        state.startupInboxAlert = payload
-    },
-    clearStartupInboxAlert (state) {
-        state.startupInboxAlert = null
     }
 }
 
@@ -531,16 +524,12 @@ const actions = {
         })
 
         commit('clearUnreadMessages')
-        commit('clearStartupInboxAlert')
 
         const seenMessages = getSeenMessages(userId)
         const nextSeenMessages = {
             ...seenMessages
         }
         let shouldPersistSeenMessages = false
-        let startupUnreadMessages = 0
-        let startupUnreadConversations = 0
-
         conversationsRef = firebase.database().ref('chats/' + userId)
         const snapshot = await conversationsRef.once('value')
 
@@ -572,20 +561,11 @@ const actions = {
                     otherUserId,
                     count: unreadCount
                 })
-                startupUnreadMessages += unreadCount
-                startupUnreadConversations += 1
             }
         })
 
         if (shouldPersistSeenMessages) {
             saveSeenMessages(userId, nextSeenMessages)
-        }
-
-        if (startupUnreadMessages > 0) {
-            commit('setStartupInboxAlert', {
-                totalMessages: startupUnreadMessages,
-                totalConversations: startupUnreadConversations
-            })
         }
 
         const handleConversationChange = snapshotChanged => {
@@ -646,8 +626,6 @@ const actions = {
         Object.keys(knownConversationLastKeys).forEach(key => {
             delete knownConversationLastKeys[key]
         })
-
-        commit('clearStartupInboxAlert')
     },
 
     notifyNewMessage({ state, dispatch }, payload) {
