@@ -2,12 +2,11 @@
   <router-view />
 </template>
 <script>
-import { mapActions, mapGetters, mapState } from 'vuex';
+import { mapActions, mapGetters } from 'vuex';
 
 export default {
  computed: {
-   ...mapGetters('store', ['unreadTotal']),
-   ...mapState('store', ['startupInboxAlert'])
+   ...mapGetters('store', ['unreadTotal'])
  },
  methods: {
    ...mapActions('store', ['handleAuthStateChanged', 'setAppVisibility', 'syncNotificationPermission']),
@@ -28,31 +27,6 @@ export default {
    updateDocumentTitle () {
      const defaultTitle = 'SmartChat'
      document.title = this.unreadTotal > 0 ? `(${this.unreadTotal}) ${defaultTitle}` : defaultTitle
-   },
-   showStartupInboxAlert (payload) {
-     const message = payload.totalConversations > 1
-       ? `Você tem ${payload.totalMessages} novas mensagens em ${payload.totalConversations} conversas.`
-       : `Você tem ${payload.totalMessages} nova${payload.totalMessages > 1 ? 's' : ''} mensagem${payload.totalMessages > 1 ? 's' : ''} aguardando leitura.`
-
-     this.$q.notify({
-       type: 'warning',
-       color: 'warning',
-       textColor: 'dark',
-       icon: 'mark_chat_unread',
-       message,
-       timeout: 5000,
-       actions: [
-         {
-           label: 'Ver',
-           color: 'dark',
-           handler: () => {
-             this.$router.push('/').catch(() => {})
-           }
-         }
-       ]
-     })
-
-     this.$store.commit('store/clearStartupInboxAlert')
    }
  },
  mounted () {
@@ -73,11 +47,6 @@ export default {
  watch: {
    unreadTotal () {
      this.updateDocumentTitle()
-   },
-   startupInboxAlert (value) {
-     if (value) {
-       this.showStartupInboxAlert(value)
-     }
    }
  }
 }
