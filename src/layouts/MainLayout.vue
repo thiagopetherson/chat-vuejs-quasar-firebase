@@ -41,7 +41,7 @@
           />
 
           <q-btn
-            v-if="!userDetails.userId"
+            v-if="!userDetails.userId && !$route.fullPath.includes('/auth')"
             to="/auth"
             icon="account_circle"
             no-caps

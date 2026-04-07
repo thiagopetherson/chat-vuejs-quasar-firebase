@@ -162,7 +162,7 @@
           <div v-if="replyingToMessage" class="chat-reply-composer" :class="{ 'chat-reply-composer--dark': $q.dark.isActive }">
             <div class="chat-reply-composer__content">
               <div class="chat-reply-composer__title">Respondendo para {{ getReplyAuthorName(replyingToMessage) }}</div>
-              <div class="chat-reply-composer__text">{{ getMessageSnippet(replyingToMessage.text) }}</div>
+              <div class="chat-reply-composer__text">{{ getMessageSnippet(replyingToMessage && replyingToMessage.text ? replyingToMessage.text : '') }}</div>
             </div>
             <q-btn flat round dense icon="close" color="grey-7" @click="cancelReply" />
           </div>
@@ -211,7 +211,8 @@
         replyingToMessage: null,
         highlightedMessageId: '',
         editingMessage: null,
-        savingMessage: false
+        savingMessage: false,
+        scrollFrameId: 0
       }
     },
     computed: {
@@ -489,21 +490,30 @@
         this.cancelEdit()
         this.$nextTick(() => {
           this.$refs.newMessage.focus()
+          this.scrollToBottom('smooth')
         })
       },
-      scrollToBottom () {
+      scrollToBottom (behavior = 'auto') {
         const messagesContainer = this.$refs.messagesContainer
 
         if (!messagesContainer) {
           return
         }
 
-        setTimeout(() => {
-          messagesContainer.scrollTo({
-            top: messagesContainer.scrollHeight,
-            behavior: 'smooth'
+        this.$nextTick(() => {
+          window.cancelAnimationFrame(this.scrollFrameId)
+          this.scrollFrameId = window.requestAnimationFrame(() => {
+            if (typeof messagesContainer.scrollTo === 'function') {
+              messagesContainer.scrollTo({
+                top: messagesContainer.scrollHeight,
+                behavior
+              })
+              return
+            }
+
+            messagesContainer.scrollTop = messagesContainer.scrollHeight
           })
-        }, 20)
+        })
       }
     },
     watch: {
@@ -515,16 +525,24 @@
       this.openConversation(value)
     },
       'messagesList.length' (value) {
-    		if (!value) {
-    			this.showMessages = false
-    			return
-    		}
+      	if (!value) {
+      		this.showMessages = false
+      		return
+      	}
 
-    		this.scrollToBottom()
-    		setTimeout(() => {
-    			this.showMessages = true
-    		}, 60)
-    	}
+      	if (this.chatLoading) {
+      		return
+      	}
+
+      	this.showMessages = true
+      	this.scrollToBottom('auto')
+      },
+      chatLoading (value) {
+        if (!value && this.messagesList.length) {
+          this.showMessages = true
+          this.scrollToBottom('auto')
+        }
+      }
     },
     mounted () {
       this.openConversation(this.$route.params.otherUserId)
@@ -532,6 +550,7 @@
     beforeUnmount() {
       // Limpando a caixa de mensagem, para as conversas de janelas fechadas não serem exibidas na nova janela
       window.clearTimeout(this.highlightTimeout)
+    window.cancelAnimationFrame(this.scrollFrameId)
 	  	this.firebaseStopGettingMessages()
 			this.setActiveChatUser('')
 	  }
@@ -541,6 +560,8 @@
 
 <style lang="stylus">
 .page-chat
+  height calc(var(--app-view-height) - 88px)
+  min-height calc(var(--app-view-height) - 88px)
   background linear-gradient(180deg, rgba(239, 245, 241, 1) 0%, rgba(227, 234, 230, 1) 100%)
 
   &:after
@@ -593,6 +614,7 @@
 .chat-messages
   position relative
   z-index 1
+  min-height 0
   overflow-y auto
   overscroll-behavior contain
   padding-bottom calc(12px + env(safe-area-inset-bottom))
