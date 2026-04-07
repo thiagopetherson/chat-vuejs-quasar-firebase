@@ -1,1 +1,43 @@
 // app global css in SCSS form
+
+:root {
+	--app-surface: rgba(255, 255, 255, 0.78);
+	--app-surface-dark: rgba(17, 22, 26, 0.82);
+	--app-text-soft: #667571;
+	--app-text-soft-dark: #99a8a4;
+	--app-view-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+	:root {
+		--app-view-height: 100dvh;
+	}
+}
+
+body {
+	color: #19312e;
+}
+
+body.body--dark {
+	color: #eff7f5;
+}
+
+.q-page {
+	position: relative;
+}
+
+.app-mobile-page {
+	min-height: calc(var(--app-view-height) - 88px);
+}
+
+.q-field__native,
+.q-field__input {
+	font-size: 0.97rem;
+}
+
+.q-card,
+.q-list,
+.q-banner,
+.q-footer {
+	transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}

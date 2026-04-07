@@ -1,8 +1,8 @@
 {
-  "name": "smackchat",
+  "name": "smartchat",
   "version": "0.0.1",
   "description": "A Quasar Framework app",
-  "productName": "SmackChat",
+  "productName": "SmartChat",
   "author": "",
   "private": true,
   "scripts": {

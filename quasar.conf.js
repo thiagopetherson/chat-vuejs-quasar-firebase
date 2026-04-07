@@ -110,7 +110,7 @@ module.exports = configure(function (ctx) {
       // directives: [],
 
       // Quasar plugins
-      plugins: []
+      plugins: ['Dark', 'Notify', 'Dialog']
     },
 
     // animations: 'all', // --- includes all animations
@@ -152,8 +152,8 @@ module.exports = configure(function (ctx) {
       },
 
       manifest: {
-        name: `SmackChat`,
-        short_name: `SmackChat`,
+        name: `SmartChat`,
+        short_name: `SmartChat`,
         description: `A Quasar Framework app`,
         display: 'standalone',
         orientation: 'portrait',
@@ -219,7 +219,7 @@ module.exports = configure(function (ctx) {
       builder: {
         // https://www.electron.build/configuration/configuration
 
-        appId: 'smackchat',
+        appId: 'smartchat',
         win: {
           target: 'nsis'
         },

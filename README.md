@@ -1,33 +1,75 @@
-# Chat Realtime (Smackchat)
-Desenvolvendo uma aplicação PWA de chat realtime utilizando VueJS, Quasar Framework e Firebase.
-- Link para a Aplicação: https://tpchat.netlify.app/
-- Caminho do executável (instalador) da aplicação desktop: dist\electron\Packaged
+# SmartChat
 
-![image](https://user-images.githubusercontent.com/44420212/147836402-e7f784f4-7e47-4132-b3fa-531bc2e4c672.png)
+Aplicação de chat em tempo real construída com Vue, Quasar e Firebase.
 
-![image](https://user-images.githubusercontent.com/44420212/147836441-daa4485b-b57b-4b9d-9dbb-7b4ba3b5fbf3.png)
+O projeto foi pensado como um chat privado e direto, com foco em conversas entre poucas pessoas, interface limpa e boa experiência em navegador e PWA.
 
-![image](https://user-images.githubusercontent.com/44420212/147836489-b16b2472-881b-4a62-9ebf-375197b8c8be.png)
+## Demo
 
------------------------------------------------
+- Aplicação: https://tpchat.netlify.app/
 
-A Quasar Framework app
+## Principais funcionalidades
 
-## Install the dependencies
+- Autenticação com Firebase Auth
+- Lista de contatos com status online/offline
+- Conversas em tempo real com Firebase Realtime Database
+- Indicadores de mensagens não lidas
+- Notificações locais no navegador
+- Aviso de mensagens pendentes ao abrir o app
+- Responder mensagens
+- Editar mensagens enviadas
+- Apagar mensagens enviadas
+- Dark mode com persistência local
+- Interface adaptada para uso mobile e PWA
+
+## Stack
+
+- Vue 3
+- Quasar Framework 2
+- Vuex 4
+- Firebase Auth
+- Firebase Realtime Database
+
+## Como rodar localmente
+
+### 1. Instale as dependências
+
 ```bash
 npm install
 ```
 
-### Start the app in development mode (hot-code reloading, error reporting, etc.)
+### 2. Rode em desenvolvimento
+
 ```bash
-quasar dev
+npx quasar dev
+```
+
+O app será iniciado por padrão em `http://localhost:8080`.
+
+## Build de produção
+
+### SPA / Web
+
+```bash
+npx quasar build -m spa
+```
+
+### Build padrão do Quasar
+
+```bash
+npx quasar build
 ```
 
 
-### Build the app for production
-```bash
-quasar build
-```
+## Screenshots
 
-### Customize the configuration
-See [Configuring quasar.conf.js](https://quasar.dev/quasar-cli/quasar-conf-js).
+![Tela de Login](<Screenshot from 2026-04-06 21-15-23.png>)
+
+![Lista de Contatos](<Screenshot from 2026-04-06 21-13-43.png>)
+
+![Tela de Conversa](<Screenshot from 2026-04-06 21-17-58.png>)
+
+## Referências
+
+- Quasar: https://quasar.dev/
+- Firebase: https://firebase.google.com/
