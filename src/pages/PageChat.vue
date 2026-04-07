@@ -287,6 +287,7 @@
       },
       cancelEdit () {
         this.editingMessage = null
+        this.newMessage = ''
       },
       scrollToRepliedMessage (messageId) {
         if (!messageId) {
@@ -452,8 +453,8 @@
           return
         }
 
-        try {
-          await this.$q.dialog({
+        const confirmed = await new Promise(resolve => {
+          this.$q.dialog({
             title: 'Apagar mensagem',
             message: 'Deseja apagar esta mensagem para todos na conversa?',
             cancel: {
@@ -466,7 +467,12 @@
             },
             persistent: true
           })
-        } catch (error) {
+            .onOk(() => resolve(true))
+            .onCancel(() => resolve(false))
+            .onDismiss(() => resolve(false))
+        })
+
+        if (!confirmed) {
           return
         }
 
@@ -895,6 +901,7 @@
   font-size 0.8rem
   font-weight 700
   margin-bottom 4px
+  color #1f2f2b
 
 .chat-reply-composer__text
   font-size 0.88rem
@@ -906,6 +913,9 @@
 
 .body--dark .chat-reply-composer__text
   color #a0afac
+
+.body--dark .chat-reply-composer__title
+  color #e6f3ef
 
 .chat-footer__input
   box-shadow 0 10px 22px rgba(10, 54, 49, 0.08)
