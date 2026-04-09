@@ -13,6 +13,20 @@
                     :bg-color="$q.dark.isActive ? 'dark-page' : 'white'"
                 />
                 <q-input
+                    v-if="tab == 'register'"
+                    type="password"
+                    class="q-mb-md"
+                    outlined
+                    v-model="formData.token"
+                    label="Token de acesso"
+                    autocomplete="one-time-code"
+                    autocapitalize="off"
+                    autocorrect="off"
+                    spellcheck="false"
+                    :dark="$q.dark.isActive"
+                    :bg-color="$q.dark.isActive ? 'dark-page' : 'white'"
+                />
+                <q-input
                     type="email"
                     class="q-mb-md"
                     outlined
@@ -71,6 +85,7 @@ export default {
             submitting: false,
             formData: {
         name: '',
+        token: '',
         email: '',
         password: ''
             }
@@ -79,7 +94,7 @@ export default {
     methods: {
     ...mapActions('store', ['registerUser', 'loginUser']),
     async submitForm () {
-            if (!this.formData.email || !this.formData.password || (this.tab == 'register' && !this.formData.name)) {
+            if (!this.formData.email || !this.formData.password || (this.tab == 'register' && (!this.formData.name || !this.formData.token))) {
                 this.$q.notify({
                     type: 'warning',
                     message: 'Preencha os campos obrigatórios antes de continuar.'
@@ -91,6 +106,7 @@ export default {
 
             const payload = {
                 name: this.formData.name,
+                token: this.formData.token,
                 email: this.formData.email,
                 password: this.formData.password
             }
@@ -119,6 +135,7 @@ export default {
                     message: 'Conta criada com sucesso. Você já pode conversar.'
                 })
                 this.formData.name = ''
+                this.formData.token = ''
             }
 
             this.formData.email = ''
