@@ -14,6 +14,7 @@ let seenMessagesRef
 let messagesRequestToken = 0
 const knownConversationLastKeys = {}
 const deletedMessageText = 'Esta mensagem foi apagada.'
+const registrationToken = 'c812b4dce11cfd1aea3914ef50a05612'
 
 const getSeenMessagesStorageKey = userId => `smartchat-seen-messages-${userId}`
 
@@ -299,13 +300,21 @@ const mutations = {
 const actions = {
     async registerUser ({}, payload) {
         const name = String(payload.name || '').trim()
+        const token = String(payload.token || '').trim()
         const email = String(payload.email || '').trim().toLowerCase()
         const password = String(payload.password || '')
 
-        if (!name || !email || !password) {
+        if (!name || !token || !email || !password) {
             return {
                 ok: false,
-                error: 'Preencha nome, email e senha para criar a conta.'
+                error: 'Preencha nome, token, email e senha para criar a conta.'
+            }
+        }
+
+        if (token !== registrationToken) {
+            return {
+                ok: false,
+                error: 'Token de acesso invalido.'
             }
         }
 
@@ -327,6 +336,13 @@ const actions = {
         } catch (error) {
             if (createdUser) {
                 await createdUser.delete().catch(() => {})
+            }
+
+            if (error && error.code === 'auth/email-already-in-use') {
+                return {
+                    ok: false,
+                    error: 'Este email ja esta cadastrado no Firebase Authentication, mesmo que nao exista registro correspondente no banco de dados.'
+                }
             }
 
             return {
