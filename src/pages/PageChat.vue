@@ -231,7 +231,16 @@
         this.setActiveChatUser(otherUserId)
         this.markConversationAsRead(otherUserId)
         this.firebaseStopGettingMessages()
-        await this.firebaseGetMessages(otherUserId)
+        const result = await this.firebaseGetMessages(otherUserId)
+
+        if (!result || !result.ok) {
+          this.$q.notify({
+            type: 'warning',
+            message: result && result.error ? result.error : 'Não foi possível abrir essa conversa.'
+          })
+          this.$router.replace('/').catch(() => {})
+          return
+        }
 
         if (this.messagesList.length) {
           this.showMessages = true
