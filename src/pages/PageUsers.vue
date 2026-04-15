@@ -264,8 +264,8 @@
               >
                 <q-menu auto-close class="users-friend-menu">
                   <q-list dense separator>
-                    <q-item clickable @click="handleRemoveFriend(getUserId(user))">
-                      <q-item-section avatar>
+                    <q-item clickable class="users-friend-menu__item" @click="handleRemoveFriend(getUserId(user))">
+                      <q-item-section avatar class="users-friend-menu__avatar">
                         <q-icon name="heart_broken" color="negative" />
                       </q-item-section>
                       <q-item-section>Desfazer amizade</q-item-section>
@@ -836,6 +836,12 @@
 
 .users-friend-menu
   border-radius 10px
+
+.users-friend-menu__item
+  min-height 40px
+
+.users-friend-menu__avatar
+  min-width 32px
 
 .users-list__status
   padding 6px 10px
