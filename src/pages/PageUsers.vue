@@ -235,7 +235,23 @@
               </q-badge>
 
               <q-btn
+                v-if="!isBackupUser(user) && $q.screen.lt.sm"
+                flat
+                dense
+                no-caps
+                icon="person_remove"
+                color="negative"
+                class="users-list__remove-btn-mobile"
+                :loading="isActionLoading('remove', getUserId(user))"
+                :disable="isUserBusy(getUserId(user))"
+                @click.stop.prevent="handleRemoveFriend(getUserId(user))"
+              >
+                <span class="users-list__remove-btn-label">Desfazer</span>
+              </q-btn>
+
+              <q-btn
                 v-if="!isBackupUser(user)"
+                v-show="!$q.screen.lt.sm"
                 flat
                 round
                 dense
@@ -244,7 +260,7 @@
                 class="users-list__menu-btn"
                 :loading="isActionLoading('remove', getUserId(user))"
                 :disable="isUserBusy(getUserId(user))"
-                @click.stop
+                @click.stop.prevent
               >
                 <q-menu auto-close class="users-friend-menu">
                   <q-list dense separator>
@@ -797,6 +813,17 @@
 .users-list__menu-btn
   margin-left 2px
 
+.users-list__remove-btn-mobile
+  min-height 36px
+  padding 0 10px
+  border-radius 10px
+  background rgba(214, 48, 49, 0.08)
+
+.users-list__remove-btn-label
+  margin-left 4px
+  font-size 0.78rem
+  font-weight 600
+
 .users-friend-menu
   border-radius 10px
 
@@ -890,6 +917,11 @@
 
   .users-list__side
     gap 4px
+
+  .users-list__remove-btn-mobile
+    width 100%
+    min-height 34px
+    justify-content center
 
   .users-list__side--actions
     flex-direction column
