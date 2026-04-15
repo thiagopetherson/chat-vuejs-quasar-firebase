@@ -226,7 +226,7 @@
               <q-item-label caption class="users-list__email">{{ getUserSecondaryText(user) }}</q-item-label>
             </q-item-section>
 
-            <q-item-section side class="users-list__side">
+            <q-item-section side class="users-list__side" :class="{ 'users-list__side--mobile-stack': $q.screen.lt.sm && !isBackupUser(user) }">
               <q-badge v-if="getUserUnreadCount(user) > 0" color="negative" text-color="white" class="users-list__unread">
                 {{ getUserUnreadCount(user) }}
               </q-badge>
@@ -239,14 +239,14 @@
                 flat
                 dense
                 no-caps
-                icon="person_remove"
-                color="negative"
+                icon="heart_broken"
+                color="grey-7"
                 class="users-list__remove-btn-mobile"
                 :loading="isActionLoading('remove', getUserId(user))"
                 :disable="isUserBusy(getUserId(user))"
                 @click.stop.prevent="handleRemoveFriend(getUserId(user))"
               >
-                <span class="users-list__remove-btn-label">Desfazer</span>
+                <span class="users-list__remove-btn-label">Remover</span>
               </q-btn>
 
               <q-btn
@@ -266,7 +266,7 @@
                   <q-list dense separator>
                     <q-item clickable @click="handleRemoveFriend(getUserId(user))">
                       <q-item-section avatar>
-                        <q-icon name="person_remove" color="negative" />
+                        <q-icon name="heart_broken" color="negative" />
                       </q-item-section>
                       <q-item-section>Desfazer amizade</q-item-section>
                     </q-item>
@@ -793,6 +793,10 @@
 
 .users-list__side
   gap 8px
+  align-items flex-end
+
+.users-list__side--mobile-stack
+  gap 2px
 
 .users-list__side--actions
   flex-direction row
@@ -814,15 +818,21 @@
   margin-left 2px
 
 .users-list__remove-btn-mobile
-  min-height 36px
-  padding 0 10px
-  border-radius 10px
-  background rgba(214, 48, 49, 0.08)
+  min-height 32px
+  padding 0 4px
+  border-radius 999px
+  background transparent
+  color #6d7d79
+  opacity 0.9
+
+.body--dark .users-list__remove-btn-mobile
+  background transparent
+  color #9eafaa
 
 .users-list__remove-btn-label
-  margin-left 4px
-  font-size 0.78rem
-  font-weight 600
+  margin-left 2px
+  font-size 0.72rem
+  font-weight 500
 
 .users-friend-menu
   border-radius 10px
@@ -918,10 +928,15 @@
   .users-list__side
     gap 4px
 
+  .users-list__side--mobile-stack
+    flex-direction column
+    align-items flex-end
+
   .users-list__remove-btn-mobile
-    width 100%
-    min-height 34px
-    justify-content center
+    width auto
+    min-height 32px
+    justify-content flex-end
+    align-self flex-end
 
   .users-list__side--actions
     flex-direction column
