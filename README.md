@@ -11,7 +11,9 @@ O projeto foi pensado como um chat privado e direto, com foco em conversas entre
 ## Principais funcionalidades
 
 - Autenticação com Firebase Auth
-- Lista de contatos com status online/offline
+- Lista de amigos com status online/offline
+- Convites pendentes por userCode
+- Contato especial Meu Backup adicionado automaticamente em novos registros
 - Conversas em tempo real com Firebase Realtime Database
 - Indicadores de mensagens não lidas
 - Notificações locais no navegador
@@ -59,6 +61,77 @@ npx quasar build -m spa
 ```bash
 npx quasar build
 ```
+
+## Regras do Realtime Database
+
+O repositório agora inclui [database.rules.json](database.rules.json) e [firebase.json](firebase.json) para publicar regras alinhadas ao modelo de amizades.
+
+Fluxo recomendado:
+
+```bash
+npx firebase login
+npx firebase use <seu-project-id>
+npx firebase deploy --only database
+```
+
+Essas regras foram pensadas para:
+
+- impedir leitura em lista da raiz `users`
+- permitir busca por código via `userCodes/{USERCODE}`
+- restringir leitura e escrita de chats a amizades mútuas
+- manter convites e amizades dentro dos caminhos usados pela aplicação
+
+## Migração manual de usuários antigos
+
+Antes de publicar as regras, preencha o índice `userCodes` para os usuários antigos. Sem isso, a busca por código fica dependente do fallback legado.
+
+Exemplo de estrutura mínima para um usuário antigo `uid-antigo-1` já amigo do usuário especial `uid-meu-backup`:
+
+```json
+{
+	"users": {
+		"uid-antigo-1": {
+			"name": "Thiago",
+			"email": "thiago@example.com",
+			"userCode": "AB12C34D56",
+			"friends": {
+				"uid-meu-backup": {
+					"since": 1713135600000
+				}
+			}
+		},
+		"uid-meu-backup": {
+			"name": "Meu Backup",
+			"email": "backup@example.com",
+			"userCode": "TREWQ12345",
+			"friends": {
+				"uid-antigo-1": {
+					"since": 1713135600000
+				}
+			}
+		}
+	},
+	"userCodes": {
+		"AB12C34D56": "uid-antigo-1",
+		"TREWQ12345": "uid-meu-backup"
+	}
+}
+```
+
+Pontos obrigatórios na migração:
+
+- o `userCode` deve estar normalizado em maiúsculas com 10 caracteres
+- cada `userCode` precisa ter seu espelho em `userCodes/{CODE}`
+- o usuário especial `Meu Backup` precisa existir com o código `TREWQ12345`
+- se quiser amizades já prontas, grave os dois lados em `friends`
+
+## Desfazer amizade
+
+Agora a tela principal de amizades permite desfazer amizade diretamente pelo menu de cada contato.
+
+- ao desfazer, os dois lados perdem o vínculo
+- convites pendentes entre o par também são limpos
+- o contato especial `Meu Backup` permanece fixo e não pode ser removido
 
 
 ## Screenshots

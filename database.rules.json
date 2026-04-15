@@ -1,0 +1,69 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "userCodes": {
+      ".read": "auth != null",
+      "$userCode": {
+        ".write": "auth != null && ((!data.exists() && !newData.isNull() && newData.val() === auth.uid) || (data.exists() && data.val() === auth.uid && newData.val() === auth.uid))"
+      }
+    },
+    "users": {
+      ".indexOn": ["userCode"],
+      "$userId": {
+        ".read": "auth != null",
+        "name": {
+          ".write": "auth != null && auth.uid === $userId && newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+        },
+        "email": {
+          ".write": "auth != null && auth.uid === $userId && newData.isString() && newData.val().length > 0 && newData.val().length <= 160"
+        },
+        "userCode": {
+          ".write": "auth != null && auth.uid === $userId && !data.exists() && newData.isString() && newData.val().matches(/^[A-Z0-9]{10}$/) && newData.root.child('userCodes/' + newData.val()).val() === auth.uid"
+        },
+        "lastSeen": {
+          ".write": "auth != null && auth.uid === $userId"
+        },
+        "connections": {
+          "$connectionId": {
+            ".write": "auth != null && auth.uid === $userId"
+          }
+        },
+        "seenMessages": {
+          "$otherUserId": {
+            ".read": "auth != null && auth.uid === $userId",
+            ".write": "auth != null && auth.uid === $userId && root.child('users/' + $userId + '/friends/' + $otherUserId).exists()"
+          }
+        },
+        "incomingFriendRequests": {
+          "$otherUserId": {
+            ".write": "auth != null && ((!newData.isNull() && auth.uid === $otherUserId && !root.child('users/' + $userId + '/friends/' + $otherUserId).exists()) || (newData.isNull() && (auth.uid === $userId || auth.uid === $otherUserId)))"
+          }
+        },
+        "outgoingFriendRequests": {
+          "$otherUserId": {
+            ".write": "auth != null && ((!newData.isNull() && auth.uid === $userId && !root.child('users/' + $userId + '/friends/' + $otherUserId).exists()) || (newData.isNull() && (auth.uid === $userId || auth.uid === $otherUserId)))"
+          }
+        },
+        "friends": {
+          "$otherUserId": {
+            ".write": "auth != null && ((newData.isNull() && (auth.uid === $userId || auth.uid === $otherUserId)) || (!newData.isNull() && (auth.uid === $userId || auth.uid === $otherUserId) && (root.child('users/' + $userId + '/incomingFriendRequests/' + $otherUserId).exists() || root.child('users/' + $userId + '/outgoingFriendRequests/' + $otherUserId).exists() || root.child('users/' + $otherUserId + '/incomingFriendRequests/' + $userId).exists() || root.child('users/' + $otherUserId + '/outgoingFriendRequests/' + $userId).exists() || root.child('users/' + $userId + '/userCode').val() === 'TREWQ12345' || root.child('users/' + $otherUserId + '/userCode').val() === 'TREWQ12345')))"
+          }
+        },
+        "$other": {
+          ".write": "auth != null && auth.uid === $userId"
+        }
+      }
+    },
+    "chats": {
+      "$userId": {
+        "$otherUserId": {
+          ".read": "auth != null && auth.uid === $userId && root.child('users/' + $userId + '/friends/' + $otherUserId).exists() && root.child('users/' + $otherUserId + '/friends/' + $userId).exists()",
+          "$messageId": {
+            ".write": "auth != null && auth.uid === $userId && root.child('users/' + $userId + '/friends/' + $otherUserId).exists() && root.child('users/' + $otherUserId + '/friends/' + $userId).exists()"
+          }
+        }
+      }
+    }
+  }
+}

@@ -11,10 +11,14 @@ let currentUserRef
 let currentUserConnectionsRef
 let currentSessionConnectionRef
 let seenMessagesRef
+const relatedUsersListeners = {}
 let messagesRequestToken = 0
 const knownConversationLastKeys = {}
 const deletedMessageText = 'Esta mensagem foi apagada.'
 const registrationToken = 'c812b4dce11cfd1aea3914ef50a05612'
+const backupCompanionUserCode = 'TREWQ12345'
+const userCodeLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+const userCodeNumbers = '0123456789'
 
 const getSeenMessagesStorageKey = userId => `smartchat-seen-messages-${userId}`
 
@@ -34,10 +38,222 @@ const getActiveConnectionsCount = (connections = {}) => {
     return Object.keys(connections).length
 }
 
+const normalizeRecord = value => {
+    return value && typeof value === 'object' ? value : {}
+}
+
+const normalizeUserCode = value => {
+    return String(value || '').replace(/[^a-z0-9]/gi, '').toUpperCase()
+}
+
+const isBackupCompanionUser = userDetails => {
+    return normalizeUserCode(userDetails && userDetails.userCode) === backupCompanionUserCode
+}
+
+const isValidUserProfile = (userDetails = {}) => {
+    return Boolean(String(userDetails.name || '').trim() && String(userDetails.email || '').trim())
+}
+
+const hasFriendshipWithUser = (userDetails = {}, otherUserId) => {
+    if (!otherUserId) {
+        return false
+    }
+
+    return Boolean(normalizeRecord(userDetails.friends)[otherUserId])
+}
+
+const getRelatedUsersFromMap = (state, relatedUsers = {}) => {
+    return Object.keys(normalizeRecord(relatedUsers)).map(userId => {
+        const user = state.users.find(item => item.userId === userId)
+
+        if (!user || !isValidUserProfile(user)) {
+            return null
+        }
+
+        return {
+            ...user,
+            relationDetails: normalizeRecord(relatedUsers[userId])
+        }
+    }).filter(Boolean)
+}
+
+const shuffleArray = items => {
+    const nextItems = [...items]
+
+    for (let index = nextItems.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1))
+        const currentValue = nextItems[index]
+        nextItems[index] = nextItems[swapIndex]
+        nextItems[swapIndex] = currentValue
+    }
+
+    return nextItems
+}
+
+const buildRandomUserCode = () => {
+    const letters = Array.from({ length: 5 }, () => userCodeLetters[Math.floor(Math.random() * userCodeLetters.length)])
+    const numbers = Array.from({ length: 5 }, () => userCodeNumbers[Math.floor(Math.random() * userCodeNumbers.length)])
+
+    return shuffleArray([...letters, ...numbers]).join('')
+}
+
+const generateUniqueUserCode = async () => {
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+        const userCode = buildRandomUserCode()
+        const indexSnapshot = await firebase.database().ref('userCodes/' + userCode).once('value')
+
+        if (indexSnapshot.exists()) {
+            continue
+        }
+
+        let snapshot = null
+
+        try {
+            snapshot = await firebase.database().ref('users').orderByChild('userCode').equalTo(userCode).limitToFirst(1).once('value')
+        } catch (error) {
+            snapshot = null
+        }
+
+        if (!snapshot || !snapshot.exists()) {
+            return userCode
+        }
+    }
+
+    throw new Error('Não foi possível gerar um código de usuário exclusivo.')
+}
+
+const buildCurrentUserPayload = (userId, userDetails = {}) => {
+    const normalizedUserDetails = normalizeUserDetails(userId, userDetails)
+
+    return {
+        userId,
+        name: normalizedUserDetails.name || '',
+        email: normalizedUserDetails.email || '',
+        userCode: normalizedUserDetails.userCode || '',
+        friends: normalizedUserDetails.friends || {},
+        incomingFriendRequests: normalizedUserDetails.incomingFriendRequests || {},
+        outgoingFriendRequests: normalizedUserDetails.outgoingFriendRequests || {}
+    }
+}
+
+const buildFriendshipUpdates = (firstUserId, secondUserId) => {
+    return {
+        ['users/' + firstUserId + '/incomingFriendRequests/' + secondUserId]: null,
+        ['users/' + firstUserId + '/outgoingFriendRequests/' + secondUserId]: null,
+        ['users/' + secondUserId + '/incomingFriendRequests/' + firstUserId]: null,
+        ['users/' + secondUserId + '/outgoingFriendRequests/' + firstUserId]: null,
+        ['users/' + firstUserId + '/friends/' + secondUserId]: {
+            since: firebase.database.ServerValue.TIMESTAMP
+        },
+        ['users/' + secondUserId + '/friends/' + firstUserId]: {
+            since: firebase.database.ServerValue.TIMESTAMP
+        }
+    }
+}
+
+const buildFriendshipRemovalUpdates = (firstUserId, secondUserId) => {
+    return {
+        ['users/' + firstUserId + '/friends/' + secondUserId]: null,
+        ['users/' + secondUserId + '/friends/' + firstUserId]: null,
+        ['users/' + firstUserId + '/incomingFriendRequests/' + secondUserId]: null,
+        ['users/' + firstUserId + '/outgoingFriendRequests/' + secondUserId]: null,
+        ['users/' + secondUserId + '/incomingFriendRequests/' + firstUserId]: null,
+        ['users/' + secondUserId + '/outgoingFriendRequests/' + firstUserId]: null
+    }
+}
+
+const findUserByCode = async userCode => {
+    const normalizedCode = normalizeUserCode(userCode)
+
+    if (!normalizedCode) {
+        return {
+            userId: '',
+            userDetails: null
+        }
+    }
+
+    const indexedUserIdSnapshot = await firebase.database().ref('userCodes/' + normalizedCode).once('value')
+    const indexedUserId = indexedUserIdSnapshot.val()
+
+    if (indexedUserId) {
+        const indexedUserSnapshot = await firebase.database().ref('users/' + indexedUserId).once('value')
+
+        if (indexedUserSnapshot.exists()) {
+            return {
+                userId: indexedUserId,
+                userDetails: indexedUserSnapshot.val() || {}
+            }
+        }
+    }
+
+    let exactSnapshot = null
+
+    try {
+        exactSnapshot = await firebase.database().ref('users').orderByChild('userCode').equalTo(normalizedCode).limitToFirst(1).once('value')
+    } catch (error) {
+        exactSnapshot = null
+    }
+
+    if (exactSnapshot && exactSnapshot.exists()) {
+        let foundUserId = ''
+        let foundUserDetails = null
+
+        exactSnapshot.forEach(childSnapshot => {
+            foundUserId = childSnapshot.key
+            foundUserDetails = childSnapshot.val() || {}
+            return true
+        })
+
+        return {
+            userId: foundUserId,
+            userDetails: foundUserDetails
+        }
+    }
+
+    let snapshot = null
+
+    try {
+        snapshot = await firebase.database().ref('users').once('value')
+    } catch (error) {
+        snapshot = null
+    }
+
+    let foundUserId = ''
+    let foundUserDetails = null
+
+    if (!snapshot) {
+        return {
+            userId: foundUserId,
+            userDetails: foundUserDetails
+        }
+    }
+
+    snapshot.forEach(childSnapshot => {
+        const candidateUserDetails = childSnapshot.val() || {}
+
+        if (normalizeUserCode(candidateUserDetails.userCode) === normalizedCode) {
+            foundUserId = childSnapshot.key
+            foundUserDetails = candidateUserDetails
+            return true
+        }
+
+        return false
+    })
+
+    return {
+        userId: foundUserId,
+        userDetails: foundUserDetails
+    }
+}
+
 const normalizeUserDetails = (userId, userDetails = {}) => {
     return {
         userId,
         ...userDetails,
+        userCode: normalizeUserCode(userDetails.userCode),
+        friends: normalizeRecord(userDetails.friends),
+        incomingFriendRequests: normalizeRecord(userDetails.incomingFriendRequests),
+        outgoingFriendRequests: normalizeRecord(userDetails.outgoingFriendRequests),
         online: getActiveConnectionsCount(userDetails.connections) > 0
     }
 }
@@ -165,6 +381,15 @@ const mutations = {
     },
     clearUsers(state) {
         state.users = []
+    },
+    removeUser(state, payload) {
+        const userId = typeof payload === 'string' ? payload : payload && payload.userId
+
+        if (!userId) {
+            return
+        }
+
+        state.users = state.users.filter(item => item.userId !== userId)
     },
     addUser(state, payload) {
         const userExists = state.users.some(item => item.userId === payload.userId)
@@ -321,13 +546,27 @@ const actions = {
         let createdUser = null
 
         try {
+            const userCode = await generateUniqueUserCode()
             const response = await firebase.auth().createUserWithEmailAndPassword(email, password)
             createdUser = response.user
 
-            await firebase.database().ref('users/' + createdUser.uid).set({
-                name,
-                email,
-                lastSeen: firebase.database.ServerValue.TIMESTAMP
+            const { userId: backupUserId, userDetails: backupUserDetails } = await findUserByCode(backupCompanionUserCode)
+
+            if (!backupUserId || !isValidUserProfile(backupUserDetails)) {
+                throw new Error('O usuário especial Meu Backup não foi encontrado com o código trewq12345. Cadastre ou corrija esse usuário antes de permitir novos registros.')
+            }
+
+            if (backupUserId === createdUser.uid) {
+                throw new Error('O usuário especial Meu Backup não pode ser o mesmo usuário recém-criado.')
+            }
+
+            await firebase.database().ref().update({
+                ['users/' + createdUser.uid + '/name']: name,
+                ['users/' + createdUser.uid + '/email']: email,
+                ['users/' + createdUser.uid + '/userCode']: userCode,
+                ['users/' + createdUser.uid + '/lastSeen']: firebase.database.ServerValue.TIMESTAMP,
+                ['userCodes/' + userCode]: createdUser.uid,
+                ...buildFriendshipUpdates(createdUser.uid, backupUserId)
             })
 
             return {
@@ -377,6 +616,7 @@ const actions = {
     },
     async logoutUser({ commit, dispatch }) {
         // Deslogar o usuário
+        dispatch('firebaseStopGettingUsers')
         dispatch('firebaseStopGettingMessages')
         dispatch('firebaseStopMessageNotifications')
         dispatch('firebaseUnbindSeenMessages')
@@ -399,11 +639,7 @@ const actions = {
             const snapshot = await firebase.database().ref('users/' + userId).once('value')
             let userDetails = snapshot.val() || {}
 
-            commit('setUserDetails', {
-            	name: userDetails.name || '',
-            	email: userDetails.email || '',
-            	userId: userId
-            })
+                        commit('setUserDetails', buildCurrentUserPayload(userId, userDetails))
             commit('setNotificationPermission', getDefaultNotificationPermission())
             await dispatch('firebaseBindSeenMessages', userId)
             dispatch('firebaseBindPresence', userId)
@@ -415,6 +651,7 @@ const actions = {
             this.$router.push('/').catch(() => {})
 		  }
 		  else {
+            dispatch('firebaseStopGettingUsers')
             dispatch('firebaseStopMessageNotifications')
             dispatch('firebaseUnbindSeenMessages')
             dispatch('firebaseUnbindPresence')
@@ -470,6 +707,189 @@ const actions = {
 
     setActiveChatUser({ commit }, payload) {
         commit('setActiveChatUserId', payload || '')
+    },
+
+    async sendFriendRequestByCode({ state }, payload) {
+        const currentUserId = state.userDetails.userId
+        const friendCode = normalizeUserCode(payload)
+
+        if (!currentUserId) {
+            return {
+                ok: false,
+                error: 'É preciso estar logado para enviar convites.'
+            }
+        }
+
+        if (!friendCode) {
+            return {
+                ok: false,
+                error: 'Informe um código de usuário válido.'
+            }
+        }
+
+        if (friendCode === normalizeUserCode(state.userDetails.userCode)) {
+            return {
+                ok: false,
+                error: 'Você não pode enviar convite para o seu próprio código.'
+            }
+        }
+
+        const { userId: otherUserId, userDetails: otherUserDetails } = await findUserByCode(friendCode)
+
+        if (!otherUserId || !otherUserDetails) {
+            return {
+                ok: false,
+                error: 'Nenhum usuário foi encontrado com esse código.'
+            }
+        }
+
+        if (!otherUserId || otherUserId === currentUserId) {
+            return {
+                ok: false,
+                error: 'Você não pode enviar convite para si mesmo.'
+            }
+        }
+
+        if (!isValidUserProfile(otherUserDetails)) {
+            return {
+                ok: false,
+                error: 'O usuário encontrado não possui um perfil válido para amizade.'
+            }
+        }
+
+        if (hasFriendshipWithUser(state.userDetails, otherUserId)) {
+            return {
+                ok: false,
+                error: 'Esse usuário já faz parte da sua lista de amigos.'
+            }
+        }
+
+        if (normalizeRecord(state.userDetails.outgoingFriendRequests)[otherUserId]) {
+            return {
+                ok: false,
+                error: 'Já existe um convite pendente enviado para esse usuário.'
+            }
+        }
+
+        if (normalizeRecord(state.userDetails.incomingFriendRequests)[otherUserId]) {
+            return {
+                ok: false,
+                error: 'Esse usuário já te enviou um convite. Aceite a solicitação pendente.'
+            }
+        }
+
+        await firebase.database().ref().update({
+            ['users/' + currentUserId + '/outgoingFriendRequests/' + otherUserId]: {
+                createdAt: firebase.database.ServerValue.TIMESTAMP
+            },
+            ['users/' + otherUserId + '/incomingFriendRequests/' + currentUserId]: {
+                createdAt: firebase.database.ServerValue.TIMESTAMP
+            }
+        })
+
+        return {
+            ok: true,
+            otherUserId
+        }
+    },
+
+    async acceptFriendRequest({ state }, otherUserId) {
+        const currentUserId = state.userDetails.userId
+
+        if (!currentUserId || !otherUserId) {
+            return {
+                ok: false,
+                error: 'Solicitação inválida para aceitar.'
+            }
+        }
+
+        if (!normalizeRecord(state.userDetails.incomingFriendRequests)[otherUserId]) {
+            return {
+                ok: false,
+                error: 'Essa solicitação não está mais pendente.'
+            }
+        }
+
+        await firebase.database().ref().update(buildFriendshipUpdates(currentUserId, otherUserId))
+
+        return {
+            ok: true
+        }
+    },
+
+    async rejectFriendRequest({ state }, otherUserId) {
+        const currentUserId = state.userDetails.userId
+
+        if (!currentUserId || !otherUserId) {
+            return {
+                ok: false,
+                error: 'Solicitação inválida para recusar.'
+            }
+        }
+
+        await firebase.database().ref().update({
+            ['users/' + currentUserId + '/incomingFriendRequests/' + otherUserId]: null,
+            ['users/' + otherUserId + '/outgoingFriendRequests/' + currentUserId]: null
+        })
+
+        return {
+            ok: true
+        }
+    },
+
+    async cancelFriendRequest({ state }, otherUserId) {
+        const currentUserId = state.userDetails.userId
+
+        if (!currentUserId || !otherUserId) {
+            return {
+                ok: false,
+                error: 'Solicitação inválida para cancelamento.'
+            }
+        }
+
+        await firebase.database().ref().update({
+            ['users/' + currentUserId + '/outgoingFriendRequests/' + otherUserId]: null,
+            ['users/' + otherUserId + '/incomingFriendRequests/' + currentUserId]: null
+        })
+
+        return {
+            ok: true
+        }
+    },
+
+    async removeFriend({ state, commit }, otherUserId) {
+        const currentUserId = state.userDetails.userId
+        const otherUserDetails = state.users.find(user => user.userId === otherUserId) || {}
+
+        if (!currentUserId || !otherUserId) {
+            return {
+                ok: false,
+                error: 'Amizade inválida para remoção.'
+            }
+        }
+
+        if (!hasFriendshipWithUser(state.userDetails, otherUserId)) {
+            return {
+                ok: false,
+                error: 'Esse usuário já não faz mais parte da sua lista de amigos.'
+            }
+        }
+
+        if (isBackupCompanionUser(otherUserDetails)) {
+            return {
+                ok: false,
+                error: 'O contato Meu Backup é fixo e não pode ser removido.'
+            }
+        }
+
+        await firebase.database().ref().update(buildFriendshipRemovalUpdates(currentUserId, otherUserId))
+        commit('clearUnreadMessage', {
+            otherUserId
+        })
+
+        return {
+            ok: true
+        }
     },
 
     async persistSeenMessage({ commit }, payload) {
@@ -595,6 +1015,14 @@ const actions = {
             return
         }
 
+        if (!hasFriendshipWithUser(state.userDetails, otherUserId)) {
+            commit('setUnreadMessageCount', {
+                otherUserId,
+                count: 0
+            })
+            return
+        }
+
         const conversationDetails = payload.conversationDetails || (await firebase.database().ref('chats/' + userId + '/' + otherUserId).once('value')).val() || {}
         const lastMessage = getLastMessageFromConversation(conversationDetails)
 
@@ -686,34 +1114,104 @@ const actions = {
         }
     },
 
-    // Criando a action que pega todos os usuários
-    firebaseGetUsers ({ commit }) {
+    firebaseStopGettingUsers ({ commit }) {
         if (usersRef) {
-            usersRef.off()
+            usersRef.off('value')
+            usersRef = null
         }
 
-        commit('clearUsers')
-        usersRef = firebase.database().ref('users')
+        Object.keys(relatedUsersListeners).forEach(userId => {
+            const listenerDetails = relatedUsersListeners[userId]
 
-        // Quando é adicionado algo novo
-        usersRef.on('child_added', snapshot => {
-            let userDetails = snapshot.val()
-            let userId = snapshot.key
-            commit('addUser', {
-                userId,
-                userDetails
-            })
+            if (listenerDetails && listenerDetails.ref && listenerDetails.handler) {
+                listenerDetails.ref.off('value', listenerDetails.handler)
+            }
+
+            delete relatedUsersListeners[userId]
         })
 
-        // Quando é modificado algo
-		usersRef.on('child_changed', snapshot => {
-			let userDetails = snapshot.val()
-			let userId = snapshot.key
-			commit('updateUser', {
-				userId,
-				userDetails
-			})
-		})
+        commit('clearUsers')
+    },
+
+    syncRelatedUsersBindings ({ state, commit }) {
+        const relatedUserIds = Array.from(new Set([
+            ...Object.keys(normalizeRecord(state.userDetails.friends)),
+            ...Object.keys(normalizeRecord(state.userDetails.incomingFriendRequests)),
+            ...Object.keys(normalizeRecord(state.userDetails.outgoingFriendRequests))
+        ].filter(userId => userId && userId !== state.userDetails.userId)))
+
+        Object.keys(relatedUsersListeners).forEach(userId => {
+            if (relatedUserIds.includes(userId)) {
+                return
+            }
+
+            const listenerDetails = relatedUsersListeners[userId]
+
+            if (listenerDetails && listenerDetails.ref && listenerDetails.handler) {
+                listenerDetails.ref.off('value', listenerDetails.handler)
+            }
+
+            delete relatedUsersListeners[userId]
+            commit('removeUser', userId)
+        })
+
+        relatedUserIds.forEach(userId => {
+            if (relatedUsersListeners[userId]) {
+                return
+            }
+
+            const userRef = firebase.database().ref('users/' + userId)
+            const handleUserSnapshot = snapshot => {
+                const userDetails = snapshot.val() || {}
+
+                if (!snapshot.exists() || !isValidUserProfile(userDetails)) {
+                    commit('removeUser', userId)
+                    return
+                }
+
+                commit('updateUser', {
+                    userId,
+                    userDetails
+                })
+            }
+
+            relatedUsersListeners[userId] = {
+                ref: userRef,
+                handler: handleUserSnapshot
+            }
+
+            userRef.on('value', handleUserSnapshot)
+        })
+    },
+
+    // Criando a action que pega todos os usuários relacionados com o usuário atual
+    firebaseGetUsers ({ commit, state, dispatch }) {
+        dispatch('firebaseStopGettingUsers')
+
+        if (!state.userDetails.userId) {
+            return
+        }
+
+        usersRef = firebase.database().ref('users/' + state.userDetails.userId)
+        const currentUserId = state.userDetails.userId
+
+        usersRef.on('value', snapshot => {
+            if (!snapshot.exists()) {
+                commit('setUserDetails', {
+                    ...state.userDetails,
+                    userId: currentUserId
+                })
+                commit('clearUsers')
+                return
+            }
+
+            commit('setUserDetails', {
+                ...state.userDetails,
+                ...buildCurrentUserPayload(currentUserId, snapshot.val() || {})
+            })
+
+            dispatch('syncRelatedUsersBindings')
+        })
     },
     async firebaseBindMessageNotifications({ state, commit, dispatch }, userIdParam) {
         const userId = userIdParam || state.userDetails.userId
@@ -742,6 +1240,14 @@ const actions = {
             const otherUserId = conversationSnapshot.key
             const conversationDetails = conversationSnapshot.val() || {}
             const lastMessage = getLastMessageFromConversation(conversationSnapshot.val())
+
+            if (!hasFriendshipWithUser(state.userDetails, otherUserId)) {
+                commit('setUnreadMessageCount', {
+                    otherUserId,
+                    count: 0
+                })
+                return
+            }
 
             if (lastMessage) {
                 knownConversationLastKeys[otherUserId] = lastMessage.messageId
@@ -786,6 +1292,15 @@ const actions = {
             const conversationDetails = snapshotChanged.val() || {}
             const lastMessage = getLastMessageFromConversation(conversationDetails)
 
+            if (!hasFriendshipWithUser(state.userDetails, otherUserId)) {
+                delete knownConversationLastKeys[otherUserId]
+                commit('setUnreadMessageCount', {
+                    otherUserId,
+                    count: 0
+                })
+                return
+            }
+
             if (!lastMessage) {
                 delete knownConversationLastKeys[otherUserId]
                 commit('setUnreadMessageCount', {
@@ -810,6 +1325,7 @@ const actions = {
             knownConversationLastKeys[otherUserId] = lastMessage.messageId
 
             const isIncomingMessage = lastMessage.from === 'them'
+            const isConversationOpen = state.activeChatUserId === otherUserId && state.appVisible
 
             if (isIncomingMessage && !isConversationOpen) {
                 dispatch('notifyNewMessage', {
@@ -868,6 +1384,17 @@ const actions = {
         const currentRequestToken = ++messagesRequestToken
 
         let userId = state.userDetails.userId
+
+        if (!hasFriendshipWithUser(state.userDetails, otherUserId)) {
+            commit('setChatLoading', false)
+            commit('clearMessages')
+
+            return {
+                ok: false,
+                error: 'Essa conversa só pode ser acessada entre usuários que são amigos.'
+            }
+        }
+
         messagesRef = firebase.database().ref('chats/' + userId + '/' + otherUserId)
         commit('setChatLoading', true)
 
@@ -942,6 +1469,10 @@ const actions = {
                     messageDetails
                 })
             })
+
+            return {
+                ok: true
+            }
         } finally {
             if (currentRequestToken === messagesRequestToken) {
                 commit('setChatLoading', false)
@@ -977,6 +1508,13 @@ const actions = {
             }
         }
 
+        if (!hasFriendshipWithUser(state.userDetails, otherUserId)) {
+            return {
+                ok: false,
+                error: 'Só é possível enviar mensagens para usuários que são seus amigos.'
+            }
+        }
+
         const messageId = firebase.database().ref('chats/' + currentUserId + '/' + otherUserId).push().key
         const message = {
             ...payload.message,
@@ -1007,6 +1545,13 @@ const actions = {
             return {
                 ok: false,
                 error: 'Mensagem inválida para edição.'
+            }
+        }
+
+        if (!hasFriendshipWithUser(state.userDetails, otherUserId)) {
+            return {
+                ok: false,
+                error: 'Só é possível editar mensagens em conversas com amigos.'
             }
         }
 
@@ -1062,6 +1607,13 @@ const actions = {
             return {
                 ok: false,
                 error: 'Mensagem inválida para remoção.'
+            }
+        }
+
+        if (!hasFriendshipWithUser(state.userDetails, otherUserId)) {
+            return {
+                ok: false,
+                error: 'Só é possível apagar mensagens em conversas com amigos.'
             }
         }
 
@@ -1126,15 +1678,16 @@ const actions = {
 const getters = {
     // Vai retornar a lista de  usuários, menos o que está logado
     users: state => {
-		let usersFiltered = []
-		state.users.forEach(item => {
-
-			if (item.userId !== state.userDetails.userId) {
-				usersFiltered.push(item)
-			}
-		})
-
-		return usersFiltered
+		return getRelatedUsersFromMap(state, state.userDetails.friends)
+    },
+    incomingFriendRequests: state => {
+        return getRelatedUsersFromMap(state, state.userDetails.incomingFriendRequests)
+    },
+    outgoingFriendRequests: state => {
+        return getRelatedUsersFromMap(state, state.userDetails.outgoingFriendRequests)
+    },
+    myUserCode: state => {
+        return state.userDetails.userCode || ''
     },
     unreadTotal: state => {
         return Object.values(state.unreadMessages).reduce((total, count) => total + count, 0)
